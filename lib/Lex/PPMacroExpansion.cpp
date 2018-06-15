@@ -1516,11 +1516,22 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     }
 
     // Escape this filename.  Turn '\' -> '\\' '"' -> '\"'
+#if defined(WIN32) || defined(_WIN32) 
+#define PATH_SEP "\\" 
+#else 
+#define PATH_SEP "/" 
+#endif 
     SmallString<128> FN;
     if (PLoc.isValid()) {
       FN += PLoc.getFilename();
       Lexer::Stringify(FN);
-      OS << '"' << FN << '"';
+      StringRef JustFN;
+      size_t index = FN.rfind(PATH_SEP);
+      if (index != llvm::StringLiteral::npos)
+         JustFN = FN.substr(index+1);
+      else
+         JustFN = FN;
+      OS << '"' << JustFN << '"';
     }
     Tok.setKind(tok::string_literal);
   } else if (II == Ident__DATE__) {
