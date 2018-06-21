@@ -219,7 +219,7 @@ static Options CreateClangOptions() {
    }
    for ( auto input_filename : input_filename_opt )
       comp_ss << input_filename << " ";
-   if (isysroot_opt)
+   if (!isysroot_opt.empty())
       comp_ss << " -isysroot " << isysroot_opt << " ";
    if (CC_opt)
       comp_ss << " -CC ";
