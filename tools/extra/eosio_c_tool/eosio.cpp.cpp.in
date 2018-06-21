@@ -153,7 +153,11 @@ static cl::opt<std::string> O_opt(
     cl::desc("Optimization level s, 0-3"),
     cl::Prefix,
     cl::cat(EosioCppToolCategory));
-
+static cl::opt<std::string> isysroot_opt(
+    "isysroot",
+    cl::desc("Set the system root directory (usually /)"),
+    cl::Prefix,
+    cl::cat(EosioCppToolCategory));
 static cl::opt<std::string> std_opt(
     "std",
     cl::desc("Language standard to compile for"),
@@ -215,6 +219,8 @@ static Options CreateClangOptions() {
    }
    for ( auto input_filename : input_filename_opt )
       comp_ss << input_filename << " ";
+   if (isysroot_opt)
+      comp_ss << " -isysroot " << isysroot_opt << " ";
    if (CC_opt)
       comp_ss << " -CC ";
    if (C_opt)
