@@ -14,7 +14,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio.compiler_options.ipp ${CMAKE_BI
 
 add_clang_executable(eosio.cc ${CMAKE_BINARY_DIR}/eosio.cc.cpp)
 target_compile_options(eosio.cc PRIVATE -fexceptions)
-target_include_directories(eosio.cc PUBLIC ${Boost_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(eosio.cc PUBLIC ${Boost_INCLUDE_DIR} ${CMAKE_BINARY_DIR})
 target_link_libraries(eosio.cc PRIVATE
   clangTooling
   clangBasic
