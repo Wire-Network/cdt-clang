@@ -13,11 +13,17 @@ using namespace boost::process;
 using namespace clang::tooling;
 using namespace llvm;
 
-#define CPP_COMP 1
+#define CPP_COMP ${CPP_COMP}
 
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed.
-static llvm::cl::OptionCategory EosioCppToolCategory("eosio.cpp options");
+#if(CPP_COMP)
+static std::string compiler_name = "eosio.cpp";
+#else
+static std::string compiler_name = "eosio.cc";
+#endif
+
+static llvm::cl::OptionCategory EosioCppToolCategory(compiler_name+" options");
 
 static cl::opt<bool> CC_opt(
     "CC",
@@ -210,7 +216,7 @@ static Options CreateClangOptions() {
    comp_ss << " -I${Boost_INCLUDE_DIR} ";
    comp_ss << " --sysroot=${EOSIO_INSTALL} ";
    comp_ss << " -I${EOSIO_INSTALL}/include/ -I${EOSIO_INSTALL}/include/libcxx -I${EOSIO_INSTALL}/include/libc ";
-#ifdef CPP_COMP
+#if(CPP_COMP)
    comp_ss << " -fno-rtti -fno-exceptions ";
 #endif
    if (!fno_cfl_aa_opt) {
@@ -321,7 +327,7 @@ static Options CreateClangOptions() {
    return {comp_ss.str(), link_ss.str(), output_fn, link};
 }
 
-#ifdef CPP_COMP
+#if(CPP_COMP)
 #define COMPILER "clang++"
 #else
 #define COMPILER "clang"
@@ -330,9 +336,9 @@ static Options CreateClangOptions() {
 int main(int argc, const char **argv) {
 
   cl::SetVersionPrinter([](llvm::raw_ostream& os) {
-        os << "eosio.cpp version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
+        os << compiler_name << " version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
   });
-  cl::ParseCommandLineOptions(argc, argv, "eosio.cpp (c/c++ compiler)");
+  cl::ParseCommandLineOptions(argc, argv, compiler_name+" (Eosio WebAssembly compiler)");
   Options opts = CreateClangOptions();
 
   std::string line;

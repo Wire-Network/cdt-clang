@@ -8,7 +8,20 @@ include_directories(include)
 set(EOSIO_APPLY_LIB ${CMAKE_INSTALL_PREFIX}/lib/LLVMEosioApply${CMAKE_SHARED_LIBRARY_SUFFIX})
 set(EOSIO_IMPORTS ${EOSIO_INSTALL}/eosio.imports)
 set(STACK_SIZE "8192")
+set(CPP_COMP "0")
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio.cpp.cpp.in ${CMAKE_BINARY_DIR}/eosio.cc.cpp)
+set(CPP_COMP "1")
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio.cpp.cpp.in ${CMAKE_BINARY_DIR}/eosio.cpp.cpp)
+
+add_clang_executable(eosio.cc ${CMAKE_BINARY_DIR}/eosio.cc.cpp)
+target_compile_options(eosio.cc PRIVATE -fexceptions)
+target_include_directories(eosio.cc PUBLIC ${Boost_INCLUDE_DIR})
+target_link_libraries(eosio.cc PRIVATE
+  clangTooling
+  clangBasic
+  clangASTMatchers
+  ${Boost_LIBRARIES})
+
 add_clang_executable(eosio.cpp ${CMAKE_BINARY_DIR}/eosio.cpp.cpp)
 target_compile_options(eosio.cpp PRIVATE -fexceptions)
 target_include_directories(eosio.cpp PUBLIC ${Boost_INCLUDE_DIR})
