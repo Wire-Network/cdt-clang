@@ -3,6 +3,7 @@
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
 #include <boost/process.hpp>
+#include <boost/filesystem.hpp>
 #include <iostream>
 #include <sstream>
 
@@ -193,24 +194,27 @@ struct Options {
    std::string compiler;
    std::string linker;
    std::string output_fn;
+   bool link;
 };
 
 static Options CreateClangOptions() {
    std::stringstream comp_ss;
    std::stringstream link_ss;
    std::string output_fn;
+   bool link = true;
 
    comp_ss << " --target=wasm32 -nostdlib -ffreestanding -fno-builtin ";
    comp_ss << " -Xclang -load -Xclang ${EOSIO_APPLY_LIB} ";
    comp_ss << " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE ";
    comp_ss << " -I${Boost_INCLUDE_DIR} ";
-   comp_ss << " -I${EOSIO_INSTALL}/eosiolib -I${EOSIO_INSTALL}/libcxx -I${EOSIO_INSTALL}/libc ";
+   comp_ss << " -I${EOSIO_INSTALL}/include/eosiolib -I${EOSIO_INSTALL}/include/libcxx -I${EOSIO_INSTALL}/include/libc ";
 #ifdef CPP_COMP
    comp_ss << " -fno-rtti -fno-exceptions ";
 #endif
    link_ss << " --allow-undefined-file=${EOSIO_IMPORTS} -e apply ";
    link_ss << " --gc-sections --strip-all -zstack-size=${STACK_SIZE} ";
    link_ss << " -stack-first --merge-data-segments ";
+   link_ss << " -L${EOSIO_INSTALL}/lib ";
 
    if (!fno_cfl_aa_opt) {
       comp_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
@@ -222,8 +226,10 @@ static Options CreateClangOptions() {
       comp_ss << " -CC ";
    if (C_opt)
       comp_ss << " -C ";
-   if (c_opt)
+   if (c_opt) {
       comp_ss << " -c ";
+      link = false;
+   }
    if (dD_opt)
       comp_ss << " -dD ";
    if (dI_opt)
@@ -281,10 +287,14 @@ static Options CreateClangOptions() {
       link_ss << " -l" << library << " ";
    if (o_opt.empty()) {
       comp_ss << " -o a.out ";
+      link_ss << " a.out ";
+      link_ss << " -o a.out";
       output_fn = "a.out";
    }
    else {
       comp_ss << " -o " << o_opt << " ";
+      link_ss << o_opt << " ";
+      link_ss << " -o " << o_opt << " ";
       output_fn = o_opt;
    }
    if (O_opt.empty())
@@ -295,17 +305,22 @@ static Options CreateClangOptions() {
       comp_ss << " -std=c++14 ";
    else
       comp_ss << " -std=" << std_opt << " ";
-   if (S_opt)
+   if (S_opt) {
       comp_ss << " -S ";
+      link = false;
+   }
    if (v_opt)
       comp_ss << " -v ";
    if (w_opt)
       comp_ss << " -w ";
    for ( auto warn : W_opt )
       comp_ss << " -W" << warn << " ";
-
    
-   return {comp_ss.str(), link_ss.str(), output_fn};
+   if (link)
+      comp_ss << " -c ";
+   link_ss << " -lc++ -lc -leosio ";
+
+   return {comp_ss.str(), link_ss.str(), output_fn, link};
 }
 
 #ifdef CPP_COMP
@@ -316,25 +331,50 @@ static Options CreateClangOptions() {
 
 int main(int argc, const char **argv) {
 
-  ipstream p_stream;
-  child comp("gcc --version", std_out > p_stream);
-  std::string line;
-  while (p_stream && std::getline(p_stream, line) && !line.empty())
-     std::cerr << line << std::endl;
-  comp.wait();
   cl::SetVersionPrinter([](llvm::raw_ostream& os) {
         os << "eosio.cpp version " << EOSIO_CPP_MAJOR << "." << EOSIO_CPP_MINOR << "." << EOSIO_CPP_REVISION << "\n";
   });
   cl::ParseCommandLineOptions(argc, argv, "eosio.cpp (c/c++ compiler)");
   Options opts = CreateClangOptions();
-  //std::cout << "CLANG OPTIONS " << CreateClangOptions().compiler << "\n";
+
+  std::string line;
+  // first compile
   ipstream comp_stream;
   std::string instr = std::string("${CMAKE_INSTALL_PREFIX}/bin/")+std::string(COMPILER)+opts.compiler;
-  std::cout << "II " << instr << std::endl;
+  std::error_code ec;
   child compile(instr.c_str(), std_out > comp_stream);
   line = "";
   while (comp_stream && std::getline(comp_stream, line) && !line.empty())
      std::cerr << line << std::endl;
   compile.wait();
+
+  if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
+     return -1;
+
+  // then link
+  if (opts.link) {
+     ipstream link_stream;
+     std::string linkstr = std::string("${CMAKE_INSTALL_PREFIX}/bin/wasm-ld"+opts.linker);
+     child link(linkstr.c_str(), std_out > link_stream);
+     line = "";
+     while (link_stream && std::getline(link_stream, line) && !line.empty())
+        std::cerr << line << std::endl;
+     link.wait();
+  }
+
+  if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
+     return -1;
+
+  // finally any post processing
+  ipstream final_stream;
+  std::string finalstr = std::string("${EOSIO_INSTALL}/../bin/stripbss "+opts.output_fn);
+  child finalp(finalstr.c_str(), std_out > final_stream);
+  line = "";
+  while (final_stream && std::getline(final_stream, line) && !line.empty())
+     std::cerr << line << std::endl;
+  finalp.wait();
+  if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
+     return -1;
+
   return 0;
 }
