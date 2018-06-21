@@ -10,6 +10,7 @@ set(EOSIO_IMPORTS ${EOSIO_INSTALL}/eosio.imports)
 set(STACK_SIZE "8192")
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio.cc.cpp.in ${CMAKE_BINARY_DIR}/eosio.cc.cpp)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio.cpp.cpp.in ${CMAKE_BINARY_DIR}/eosio.cpp.cpp)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio.compiler_options.ipp ${CMAKE_BINARY_DIR}/eosio.compiler_options.ipp)
 
 add_clang_executable(eosio.cc ${CMAKE_BINARY_DIR}/eosio.cc.cpp)
 target_compile_options(eosio.cc PRIVATE -fexceptions)
