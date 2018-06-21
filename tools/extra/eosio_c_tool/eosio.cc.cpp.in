@@ -13,8 +13,8 @@ using namespace boost::process;
 using namespace clang::tooling;
 using namespace llvm;
 
-#define CPP_COMP 1
-#define COMPILER_NAME "eosio.cpp"
+#define CPP_COMP 0
+#define COMPILER_NAME "eosio.cc"
 #include "eosio.compiler_options.ipp"
 
 static Options CreateClangOptions() {
@@ -30,7 +30,6 @@ static Options CreateClangOptions() {
    comp_ss << " -I${Boost_INCLUDE_DIR} ";
    comp_ss << " --sysroot=${EOSIO_INSTALL} ";
    comp_ss << " -I${EOSIO_INSTALL}/include/ -I${EOSIO_INSTALL}/include/libcxx -I${EOSIO_INSTALL}/include/libc ";
-   comp_ss << " -fno-rtti -fno-exceptions ";
    if (!fno_cfl_aa_opt) {
       comp_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
       link_ss << " -fno-cfl-aa ";
@@ -61,18 +60,12 @@ static Options CreateClangOptions() {
       comp_ss << " -emit-llvm ";
    if (E_opt)
       comp_ss << " -E ";
-   if (faligned_allocation_opt)
-      comp_ss << " -faligned-allocation ";
-   if (fcoroutine_ts_opt)
-      comp_ss << " -fcoroutine-ts ";
    if (finline_functions_opt)
       comp_ss << " -finline-functions ";
    if (finline_hint_functions_opt)
       comp_ss << " -finline-hint-functions ";
    if (fmerge_all_constants_opt)
       comp_ss << " -fmerge-all-constants ";
-   if (fno_elide_constructors_opt)
-      comp_ss << " -fno-elide-constructors ";
    if (fno_lto_opt) {
       link_ss << " --lto-O0 ";
       if (!lto_opt_opt.empty())
@@ -92,8 +85,6 @@ static Options CreateClangOptions() {
       comp_ss << " -fstrict-enums ";
    if (fstrict_return_opt)
       comp_ss << " -fstrict-return ";
-   if (fstrict_vtable_pointers_opt)
-      comp_ss << " -fstrict-vtable-pointers ";
    for ( auto include : include_opt )
       comp_ss << " -include=" << include << " ";
    for ( auto inc_dir : I_opt )
@@ -118,10 +109,6 @@ static Options CreateClangOptions() {
       comp_ss << " -O3 ";
    else
       comp_ss << " -O" << O_opt << " ";
-   if (std_opt.empty())
-      comp_ss << " -std=c++14 ";
-   else
-      comp_ss << " -std=" << std_opt << " ";
    if (S_opt) {
       comp_ss << " -S ";
       link = false;
@@ -144,7 +131,7 @@ int main(int argc, const char **argv) {
   cl::SetVersionPrinter([](llvm::raw_ostream& os) {
         os << COMPILER_NAME << " version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
   });
-  cl::ParseCommandLineOptions(argc, argv, std::string(COMPILER_NAME)+" (Eosio C++ -> WebAssembly compiler)");
+  cl::ParseCommandLineOptions(argc, argv, std::string(COMPILER_NAME)+" (Eosio C -> WebAssembly compiler)");
   Options opts = CreateClangOptions();
 
   std::string line;
