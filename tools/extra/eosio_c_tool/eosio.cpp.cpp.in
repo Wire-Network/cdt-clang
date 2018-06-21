@@ -211,7 +211,7 @@ static Options CreateClangOptions() {
 #endif
    if (!fno_cfl_aa_opt) {
       comp_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
-      link_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
+      link_ss << " -fno-cfl-aa ";
    }
    for ( auto input_filename : input_filename_opt )
       comp_ss << input_filename << " ";
