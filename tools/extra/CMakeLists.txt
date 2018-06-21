@@ -1,1 +1,1 @@
-add_subdirectory(cppeos_tool)
+add_subdirectory(eosio_c_tool)
