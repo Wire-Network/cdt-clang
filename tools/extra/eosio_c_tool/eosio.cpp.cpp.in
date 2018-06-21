@@ -15,10 +15,6 @@ using namespace llvm;
 
 #define CPP_COMP 1
 
-#define EOSIO_CPP_MAJOR "1"
-#define EOSIO_CPP_MINOR "0"
-#define EOSIO_CPP_REVISION "0"
-
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed.
 static llvm::cl::OptionCategory EosioCppToolCategory("eosio.cpp options");
@@ -207,15 +203,12 @@ static Options CreateClangOptions() {
    comp_ss << " -Xclang -load -Xclang ${EOSIO_APPLY_LIB} ";
    comp_ss << " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE ";
    comp_ss << " -I${Boost_INCLUDE_DIR} ";
-   comp_ss << " -I${EOSIO_INSTALL}/include/eosiolib -I${EOSIO_INSTALL}/include/libcxx -I${EOSIO_INSTALL}/include/libc ";
+   comp_ss << " -I${Boost_INCLUDE_DIR} ";
+   comp_ss << " --sysroot=${EOSIO_INSTALL} ";
+   comp_ss << " -I${EOSIO_INSTALL}/include/ -I${EOSIO_INSTALL}/include/libcxx -I${EOSIO_INSTALL}/include/libc ";
 #ifdef CPP_COMP
    comp_ss << " -fno-rtti -fno-exceptions ";
 #endif
-   link_ss << " --allow-undefined-file=${EOSIO_IMPORTS} -e apply ";
-   link_ss << " --gc-sections --strip-all -zstack-size=${STACK_SIZE} ";
-   link_ss << " -stack-first --merge-data-segments ";
-   link_ss << " -L${EOSIO_INSTALL}/lib ";
-
    if (!fno_cfl_aa_opt) {
       comp_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
       link_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
@@ -318,7 +311,6 @@ static Options CreateClangOptions() {
    
    if (link)
       comp_ss << " -c ";
-   link_ss << " -lc++ -lc -leosio ";
 
    return {comp_ss.str(), link_ss.str(), output_fn, link};
 }
@@ -332,7 +324,7 @@ static Options CreateClangOptions() {
 int main(int argc, const char **argv) {
 
   cl::SetVersionPrinter([](llvm::raw_ostream& os) {
-        os << "eosio.cpp version " << EOSIO_CPP_MAJOR << "." << EOSIO_CPP_MINOR << "." << EOSIO_CPP_REVISION << "\n";
+        os << "eosio.cpp version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
   });
   cl::ParseCommandLineOptions(argc, argv, "eosio.cpp (c/c++ compiler)");
   Options opts = CreateClangOptions();
@@ -354,27 +346,27 @@ int main(int argc, const char **argv) {
   // then link
   if (opts.link) {
      ipstream link_stream;
-     std::string linkstr = std::string("${CMAKE_INSTALL_PREFIX}/bin/wasm-ld"+opts.linker);
+     std::string linkstr = std::string("${CMAKE_INSTALL_PREFIX}/bin/eosio.ld"+opts.linker);
      child link(linkstr.c_str(), std_out > link_stream);
      line = "";
      while (link_stream && std::getline(link_stream, line) && !line.empty())
         std::cerr << line << std::endl;
      link.wait();
+
+     if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
+        return -1;
+
+     // finally any post processing
+     ipstream final_stream;
+     std::string finalstr = std::string("${EOSIO_INSTALL}/../bin/stripbss "+opts.output_fn);
+     child finalp(finalstr.c_str(), std_out > final_stream);
+     line = "";
+     while (final_stream && std::getline(final_stream, line) && !line.empty())
+        std::cerr << line << std::endl;
+     finalp.wait();
+     if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
+        return -1;
+
   }
-
-  if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
-     return -1;
-
-  // finally any post processing
-  ipstream final_stream;
-  std::string finalstr = std::string("${EOSIO_INSTALL}/../bin/stripbss "+opts.output_fn);
-  child finalp(finalstr.c_str(), std_out > final_stream);
-  line = "";
-  while (final_stream && std::getline(final_stream, line) && !line.empty())
-     std::cerr << line << std::endl;
-  finalp.wait();
-  if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
-     return -1;
-
   return 0;
 }

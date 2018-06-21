@@ -16,5 +16,7 @@ target_link_libraries(eosio.cpp PRIVATE
   clangTooling
   clangBasic
   clangASTMatchers
-  ${Boost_LIBRARIES}
-  )
+  ${Boost_LIBRARIES})
+
+install(FILES ${CMAKE_BINARY_DIR}/bin/eosio.cpp DESTINATION ${CMAKE_INSTALL_BINDIR} PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+
