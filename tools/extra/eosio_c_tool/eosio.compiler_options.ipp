@@ -140,6 +140,12 @@ static cl::opt<std::string> isysroot_opt(
     cl::desc("Set the system root directory (usually /)"),
     cl::Prefix,
     cl::cat(EosioCompilerToolCategory));
+static cl::opt<std::string> isystem_opt(
+    "isystem",
+    cl::desc("Add directory to SYSTEM include search path"),
+    cl::Prefix,
+    cl::cat(EosioCompilerToolCategory));
+
 #ifdef CPP_COMP
 static cl::opt<std::string> std_opt(
     "std",
