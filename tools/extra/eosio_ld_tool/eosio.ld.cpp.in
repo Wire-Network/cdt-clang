@@ -17,6 +17,16 @@ using namespace llvm;
 // only ones displayed.
 static llvm::cl::OptionCategory EosioLdToolCategory("eosio.ld options");
 
+static cl::opt<std::string> eosio_imports_opt(
+    "eosio-imports",
+    cl::desc("Set the file for eosio.imports"),
+    cl::Hidden,
+    cl::cat(EosioLdToolCategory));
+static cl::opt<std::string> pp_path_opt(
+    "eosio-pp-dir",
+    cl::desc("Set the directory for eosio.pp"),
+    cl::Hidden,
+    cl::cat(EosioLdToolCategory));
 static cl::opt<bool> fno_lto_opt(
     "fno-lto",
     cl::desc("Disable LTO"),
@@ -24,6 +34,14 @@ static cl::opt<bool> fno_lto_opt(
 static cl::opt<bool> fno_cfl_aa_opt(
       "fno-cfl-aa",
       cl::desc("Disable CFL Alias Analysis"),
+      cl::cat(EosioLdToolCategory));
+static cl::opt<bool> fno_stack_first_opt(
+      "fno-stack-first",
+      cl::desc("Don't set the stack first in memory"),
+      cl::cat(EosioLdToolCategory));
+static cl::opt<bool> fno_post_pass_opt(
+      "fno-post-pass",
+      cl::desc("Don't run post processing pass"),
       cl::cat(EosioLdToolCategory));
 static cl::opt<std::string> lto_opt_opt(
       "lto-opt",
@@ -55,22 +73,34 @@ struct Options {
    std::string linker;
    std::string output_fn;
    bool link;
+   std::string eosio_pp_dir;
 };
 
 static Options CreateLDOptions() {
    std::stringstream link_ss;
    std::string output_fn;
    bool link = true;
+   std::string pp_dir;
 
    link_ss << " --allow-undefined-file=${EOSIO_IMPORTS} -e apply ";
    link_ss << " --gc-sections --strip-all -zstack-size=${STACK_SIZE} ";
-   link_ss << " -stack-first --merge-data-segments ";
-   link_ss << " -L${EOSIO_INSTALL}/lib ";
-
+   link_ss << " --merge-data-segments ";
+   link_ss << " -L../lib ";
+   
+   if (!pp_path_opt.empty())
+      pp_dir = pp_path_opt;
+   else
+      pp_dir = ".";
+   if (!eosio_imports_opt.empty())
+      link_ss << " --allow-undefined-file=" << eosio_imports_opt << " ";
+   else
+      link_ss << " --allow-undefined-file=../lib/eosio.imports ";
    if (!fno_cfl_aa_opt) {
       link_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
    }
-
+   if (!fno_stack_first_opt) {
+      link_ss << " -stack-first ";
+   } 
    for ( auto input_filename : input_filename_opt )
       link_ss << input_filename << " ";
    if (fno_lto_opt) {
@@ -96,7 +126,7 @@ static Options CreateLDOptions() {
    }
    link_ss << " -lc++ -lc -leosio ";
 
-   return {link_ss.str(), output_fn, link};
+   return {link_ss.str(), output_fn, link, pp_dir};
 }
 
 int main(int argc, const char **argv) {
@@ -111,27 +141,43 @@ int main(int argc, const char **argv) {
   // link
   if (opts.link) {
      ipstream link_stream;
-     std::string linkstr = std::string("${CMAKE_INSTALL_PREFIX}/bin/wasm-ld"+opts.linker);
-     child link(linkstr.c_str(), std_out > link_stream);
-     line = "";
-     while (link_stream && std::getline(link_stream, line) && !line.empty())
-        std::cerr << line << std::endl;
-     link.wait();
+     std::string linkstr = std::string("./wasm-ld "+opts.linker);
+     try {
+        child link(linkstr.c_str(), std_out > link_stream);
+        line = "";
+        while (link_stream && std::getline(link_stream, line) && !line.empty())
+           std::cerr << line << std::endl;
+        link.wait();
+     } catch ( boost::process::process_error& e ) {
+        std::cerr << e.what() << "\n";
+        return -1;
+     }
   }
 
   if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
      return -1;
 
   // finally any post processing
-  ipstream final_stream;
-  std::string finalstr = std::string("${EOSIO_INSTALL}/../bin/stripbss "+opts.output_fn);
-  child finalp(finalstr.c_str(), std_out > final_stream);
-  line = "";
-  while (final_stream && std::getline(final_stream, line) && !line.empty())
-     std::cerr << line << std::endl;
-  finalp.wait();
-  if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
-     return -1;
-
+  if (!fno_post_pass_opt) {
+     ipstream final_stream;
+     if ( !boost::filesystem::exists( opts.eosio_pp_dir+"/eosio.pp" ) ) {
+        std::cerr << "Error: eosio.pp not found! (Try reinstalling eosio.wasmsdk)" << std::endl;
+        return -1;
+     }
+        
+     std::string finalstr = std::string(opts.eosio_pp_dir+"/eosio.pp "+opts.output_fn);
+     try {
+        child finalp(finalstr.c_str(), std_out > final_stream);
+        line = "";
+        while (final_stream && std::getline(final_stream, line) && !line.empty())
+           std::cerr << line << std::endl;
+        finalp.wait();
+        if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
+           return -1;
+     } catch ( boost::process::process_error& e ) {
+        std::cerr << e.what() << std::endl;
+        return -1;
+     }
+   }
   return 0;
 }

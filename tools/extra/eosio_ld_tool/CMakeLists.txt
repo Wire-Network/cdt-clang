@@ -6,7 +6,6 @@ if(Boost_FOUND)
 endif()
 
 include_directories(include)
-set(EOSIO_IMPORTS ${EOSIO_INSTALL}/eosio.imports)
 set(STACK_SIZE "8192")
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio.ld.cpp.in ${CMAKE_BINARY_DIR}/eosio.ld.cpp)
