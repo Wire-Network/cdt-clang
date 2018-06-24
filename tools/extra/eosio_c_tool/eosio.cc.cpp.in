@@ -15,7 +15,7 @@ using namespace llvm;
 
 #define CPP_COMP 0
 #define COMPILER_NAME "eosio.cc"
-#include "eosio.compiler_options.ipp"
+#include <compiler_options.ipp>
 
 int main(int argc, const char **argv) {
 
@@ -28,18 +28,16 @@ int main(int argc, const char **argv) {
   std::string line;
   // first compile
   ipstream comp_stream;
-  std::string instr = std::string("./clang")+opts.compiler;
+  std::string instr = std::string(WhereAmI()+"/clang")+opts.compiler;
   try {
      child compile(instr.c_str(), std_out > comp_stream);
      line = "";
      while (comp_stream && std::getline(comp_stream, line) && !line.empty())
-        std::cerr << line << std::endl;
+        std::cout << line << std::endl;
      compile.wait();
 
-     if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
-        return -1;
   } catch ( boost::process::process_error& e ) {
-     std::cerr << e.what() << std::endl;
+     std::cout << e.what() << std::endl;
      return -1;
   }
 
@@ -47,18 +45,16 @@ int main(int argc, const char **argv) {
   //
   if (opts.link) {
      ipstream link_stream;
-     std::string linkstr = std::string("./eosio.ld "+opts.linker);
+     std::string linkstr = std::string(WhereAmI()+"/eosio.ld "+opts.linker);
      try {
         child link(linkstr.c_str(), std_out > link_stream);
         line = "";
         while (link_stream && std::getline(link_stream, line) && !line.empty())
-           std::cerr << line << std::endl;
+           std::cout << line << std::endl;
         link.wait();
 
-        if ( !boost::filesystem::exists( opts.output_fn.c_str() ) )
-           return -1;
      } catch ( boost::process::process_error& e ) {
-        std::cerr << e.what() << std::endl;
+        std::cout << e.what() << std::endl;
         return -1; 
      }
   }

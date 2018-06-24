@@ -6,12 +6,12 @@ if(Boost_FOUND)
 endif()
 
 include_directories(include)
-set(STACK_SIZE "8192")
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio.ld.cpp.in ${CMAKE_BINARY_DIR}/eosio.ld.cpp)
-add_clang_executable(eosio.ld ${CMAKE_BINARY_DIR}/eosio.ld.cpp)
+
+add_clang_executable(eosio.ld ${CMAKE_BINARY_DIR}/eosio.ld.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../whereami.cpp)
 target_compile_options(eosio.ld PRIVATE -fexceptions)
-target_include_directories(eosio.ld PUBLIC ${Boost_INCLUDE_DIR})
+target_include_directories(eosio.ld PUBLIC ${Boost_INCLUDE_DIR} ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../)
 target_link_libraries(eosio.ld PRIVATE
   clangTooling
   clangBasic

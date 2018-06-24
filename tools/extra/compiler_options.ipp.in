@@ -1,4 +1,73 @@
-static llvm::cl::OptionCategory EosioCompilerToolCategory(std::string(COMPILER_NAME)+" options");
+#include <whereami.h>
+
+#ifdef ONLY_LD
+#define LD_CAT EosioLdToolCategory
+#else
+#define LD_CAT EosioCompilerToolCategory
+#endif
+
+#ifndef ONLY_LD
+static llvm::cl::OptionCategory EosioCompilerToolCategory("compiler options");
+#else
+static llvm::cl::OptionCategory EosioLdToolCategory("ld options");
+#endif
+
+/// begin ld options
+static cl::opt<std::string> eosio_imports_opt(
+    "eosio-imports",
+    cl::desc("Set the file for eosio.imports"),
+    cl::Hidden,
+    cl::cat(LD_CAT));
+static cl::opt<std::string> pp_path_opt(
+    "eosio-pp-dir",
+    cl::desc("Set the directory for eosio.pp"),
+    cl::Hidden,
+    cl::cat(LD_CAT));
+static cl::opt<bool> fno_lto_opt(
+    "fno-lto",
+    cl::desc("Disable LTO"),
+    cl::cat(LD_CAT));
+static cl::opt<bool> fno_cfl_aa_opt(
+      "fno-cfl-aa",
+      cl::desc("Disable CFL Alias Analysis"),
+      cl::cat(LD_CAT));
+static cl::opt<bool> fno_stack_first_opt(
+      "fno-stack-first",
+      cl::desc("Don't set the stack first in memory"),
+      cl::cat(LD_CAT));
+static cl::opt<bool> fno_post_pass_opt(
+      "fno-post-pass",
+      cl::desc("Don't run post processing pass"),
+      cl::cat(LD_CAT));
+static cl::opt<std::string> lto_opt_opt(
+      "lto-opt",
+      cl::desc("LTO Optimization level (O0-O3)"),
+      cl::cat(LD_CAT));
+static cl::list<std::string> L_opt(
+    "L",
+    cl::desc("Add directory to library search path"),
+    cl::cat(LD_CAT),
+    cl::Prefix,
+    cl::ZeroOrMore);
+static cl::list<std::string> l_opt(
+    "l",
+    cl::desc("Root name of library to link"),
+    cl::cat(LD_CAT),
+    cl::Prefix,
+    cl::ZeroOrMore);
+static cl::opt<std::string> o_opt(
+    "o",
+    cl::desc("Write output to <file>"),
+    cl::cat(LD_CAT));
+static cl::list<std::string> input_filename_opt(
+      cl::Positional, 
+      cl::desc("<input file> ..."), 
+      cl::cat(LD_CAT),
+      cl::OneOrMore);
+/// End of ld options
+
+#ifndef ONLY_LD
+/// begin c/c++ options
 static cl::opt<bool> CC_opt(
     "CC",
     cl::desc("Include comments from within macros in preprocessed output"),
@@ -41,18 +110,6 @@ static cl::opt<bool> E_opt(
     "E",
     cl::desc("Only run the preprocessor"),
     cl::cat(EosioCompilerToolCategory));
-
-#ifdef CPP_COMP
-static cl::opt<bool> faligned_allocation_opt(
-    "faligned-allocation",
-    cl::desc("Enable C++17 aligned allocation functions"),
-    cl::cat(EosioCompilerToolCategory));
-static cl::opt<bool> fcoroutine_ts_opt(
-    "fcoroutine-ts",
-    cl::desc("Enable support for the C++ Coroutines TS"),
-    cl::cat(EosioCompilerToolCategory));
-#endif
-
 static cl::opt<bool> finline_functions_opt(
     "finline-functions",
     cl::desc("Inline suitable functions"),
@@ -69,18 +126,6 @@ static cl::opt<bool> fno_elide_constructors_opt(
     "fno-elide-constructors",
     cl::desc("Disable C++ copy constructor elision"),
     cl::cat(EosioCompilerToolCategory));
-static cl::opt<bool> fno_lto_opt(
-    "fno-lto",
-    cl::desc("Disable LTO"),
-    cl::cat(EosioCompilerToolCategory));
-static cl::opt<bool> fno_cfl_aa_opt(
-      "fno-cfl-aa",
-      cl::desc("Disable CFL Alias Analysis"),
-      cl::cat(EosioCompilerToolCategory));
-static cl::opt<std::string> lto_opt_opt(
-      "lto-opt",
-      cl::desc("LTO Optimization level (O0-O3)"),
-      cl::cat(EosioCompilerToolCategory));
 static cl::opt<bool> fstack_protector_all_opt(
     "fstack-protector-all",
     cl::desc("Force the usage of stack protectors for all functions"),
@@ -116,22 +161,6 @@ static cl::list<std::string> I_opt(
     cl::cat(EosioCompilerToolCategory),
     cl::Prefix,
     cl::ZeroOrMore);
-static cl::list<std::string> L_opt(
-    "L",
-    cl::desc("Add directory to library search path"),
-    cl::cat(EosioCompilerToolCategory),
-    cl::Prefix,
-    cl::ZeroOrMore);
-static cl::list<std::string> l_opt(
-    "l",
-    cl::desc("Root name of library to link"),
-    cl::cat(EosioCompilerToolCategory),
-    cl::Prefix,
-    cl::ZeroOrMore);
-static cl::opt<std::string> o_opt(
-    "o",
-    cl::desc("Write output to <file>"),
-    cl::cat(EosioCompilerToolCategory));
 static cl::opt<std::string> O_opt(
     "O",
     cl::desc("Optimization level s, 0-3"),
@@ -148,24 +177,11 @@ static cl::opt<std::string> isysroot_opt(
     cl::Hidden,
     cl::Prefix,
     cl::cat(EosioCompilerToolCategory));
-static cl::opt<std::string> eosio_imports_opt(
-    "eosio-imports",
-    cl::desc("Set the file for eosio.imports"),
-    cl::Hidden,
-    cl::cat(EosioCompilerToolCategory));
 static cl::opt<std::string> isystem_opt(
     "isystem",
     cl::desc("Add directory to SYSTEM include search path"),
     cl::Prefix,
     cl::cat(EosioCompilerToolCategory));
-
-#ifdef CPP_COMP
-static cl::opt<std::string> std_opt(
-    "std",
-    cl::desc("Language standard to compile for"),
-    cl::cat(EosioCompilerToolCategory));
-#endif
-
 static cl::opt<bool> S_opt(
     "S",
     cl::desc("Only run preprocess and compilation steps"),
@@ -188,71 +204,127 @@ static cl::list<std::string> W_opt(
     cl::cat(EosioCompilerToolCategory),
     cl::Prefix,
     cl::ZeroOrMore);
-static cl::list<std::string> input_filename_opt(
-      cl::Positional, 
-      cl::desc("<input file> ..."), 
-      cl::cat(EosioCompilerToolCategory),
-      cl::OneOrMore);
+/// end c/c++ options
+
+/// begin c++ options
+#ifdef CPP_COMP
+static cl::opt<std::string> std_opt(
+    "std",
+    cl::desc("Language standard to compile for"),
+    cl::cat(EosioCompilerToolCategory));
+static cl::opt<bool> faligned_allocation_opt(
+    "faligned-allocation",
+    cl::desc("Enable C++17 aligned allocation functions"),
+    cl::cat(EosioCompilerToolCategory));
+static cl::opt<bool> fcoroutine_ts_opt(
+    "fcoroutine-ts",
+    cl::desc("Enable support for the C++ Coroutines TS"),
+    cl::cat(EosioCompilerToolCategory));
+#endif
+/// end c++ options
+#endif
 
 struct Options {
    std::string compiler;
    std::string linker;
    std::string output_fn;
    bool link;
+   std::string eosio_pp_dir;
 };
 
-static std::string GetDefaults() {
-   return " --target=wasm32 -nostdlib -ffreestanding -fno-builtin "
-          " -Xclang -load -Xclang ../lib/LLVMEosioApply${CMAKE_SHARED_LIBRARY_SUFFIX} "
+static std::string WhereAmI() {
+   static bool cached = false;
+   static std::vector<char> ret;
+   if (cached)
+      return {ret.data()};
+
+   int dirname_len = 0;
+   auto len = wai_getExecutablePath(NULL, 0, &dirname_len);
+   if (len <= 0)
+      return "";
+   ret.resize(len+1);
+   wai_getExecutablePath(ret.data(), len, &dirname_len);
+   ret[dirname_len] = '\0';
+   cached = true;
+   return {ret.data()};
+}
+
+static std::string GetCompDefaults() {
+   const char* eosio_apply_suff = "${CMAKE_SHARED_LIBRARY_SUFFIX}";
+   std::string ret = " --target=wasm32 -nostdlib -ffreestanding -fno-builtin "
 #ifdef CPP_COMP
           " -fno-rtti -fno-exceptions "
 #endif
           " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE "
           " -I${Boost_INCLUDE_DIR} "
           " -I${Boost_INCLUDE_DIR} ";
-   //       " --sysroot=${EOSIO_INSTALL} ";
-   //comp_ss << " -I${EOSIO_INSTALL}/include/ -I${EOSIO_INSTALL}/include/libcxx -I${EOSIO_INSTALL}/include/libc ";
+   return std::string(ret+" -Xclang -load -Xclang "+WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff+" ");
 }
+
+#ifdef ONLY_LD
+static std::string GetLdDefaults() {
+   const char* stack_size = "${EOSIO_STACK_SIZE}";
+   std::string ret = " -e apply --gc-sections --strip-all -zstack-size="+std::string(stack_size)+" "
+                     " --merge-data-segments -L"+WhereAmI()+"/../eosio.wasmsdk/lib ";
+   return ret;
+}
+#endif
 
 static Options CreateOptions(bool add_defaults=true) {
    std::stringstream comp_ss;
    std::stringstream link_ss;
    std::string output_fn;
    bool link = true;
+   std::string pp_dir;
 
-   if (add_defaults)
-      comp_ss << GetDefaults();
-//   comp_ss << " --target=wasm32 -nostdlib -ffreestanding -fno-builtin ";
-//   comp_ss << " -Xclang -load -Xclang ../lib ";${EOSIO_APPLY_LIB} ";
-//   comp_ss << " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE ";
-//   comp_ss << " -I${Boost_INCLUDE_DIR} ";
-//   comp_ss << " -I${Boost_INCLUDE_DIR} ";
-//   comp_ss << " --sysroot=${EOSIO_INSTALL} ";
-//   comp_ss << " -I${EOSIO_INSTALL}/include/ -I${EOSIO_INSTALL}/include/libcxx -I${EOSIO_INSTALL}/include/libc ";
+   if (add_defaults) {
+      comp_ss << GetCompDefaults();
+#ifdef ONLY_LD
+      link_ss << GetLdDefaults();
+#endif
+   }
+   
+   if (!pp_path_opt.empty())
+      pp_dir = pp_path_opt;
+   else
+      pp_dir = WhereAmI();
+
    if (!fno_cfl_aa_opt) {
       comp_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
+#ifdef ONLY_LD
+      link_ss << " -mllvm -use-cfl-aa-in-codegne=both ";
+#else
       link_ss << " -fno-cfl-aa ";
+#endif
    }
-   for ( auto input_filename : input_filename_opt )
+   for ( auto input_filename : input_filename_opt ) {
+#ifdef ONLY_LD
+      link_ss << input_filename << " ";
+#else
       comp_ss << input_filename << " ";
+#endif
+   }
+
+#ifndef ONLY_LD
    if (!sysroot_opt.empty()) {
-      comp_ss << " --sysroot " << isysroot_opt << " ";
+      comp_ss << " --sysroot " << sysroot_opt << " ";
       comp_ss << " -I" << sysroot_opt << "/include/libcxx" << " -I" << sysroot_opt << "/include/libc ";
-      link_ss << " -L" << sysroot_opt << "/lib"; 
+      link_ss << " -L" << sysroot_opt << "/lib "; 
    }
    else {
-      comp_ss << " -I../include/libcxx" << " -I../include/libc ";
-      comp_ss << " --sysroot=../ ";
+      comp_ss << " -I" << WhereAmI() << "/eosio.wasmsdk/../include/libcxx" << " -I" << WhereAmI() << "/eosio.wasmsdk/../include/libc ";
+      comp_ss << " --sysroot=" << WhereAmI() << "/eosio.wasmsdk/../eosio.wasmsdk ";
+      link_ss << " -L" << WhereAmI() << "/../eosio.wasmsdk/lib ";
    }
    if (!isystem_opt.empty()) {
       comp_ss << " -isystem " << isystem_opt << " "; 
    }
+   comp_ss << " -c ";
    if (CC_opt)
       comp_ss << " -CC ";
    if (C_opt)
       comp_ss << " -C ";
    if (c_opt) {
-      comp_ss << " -c ";
       link = false;
    }
    if (dD_opt)
@@ -275,15 +347,6 @@ static Options CreateOptions(bool add_defaults=true) {
       comp_ss << " -finline-hint-functions ";
    if (fmerge_all_constants_opt)
       comp_ss << " -fmerge-all-constants ";
-   if (fno_lto_opt) {
-      link_ss << " --lto-O0 ";
-      if (!lto_opt_opt.empty())
-         std::cerr << "Warning : lto disabled but lto optimization level given\n";
-   }
-   else if (!lto_opt_opt.empty())
-      link_ss << " --lto-" << lto_opt_opt << " ";
-   else
-      link_ss << " --lto-O3 ";
    if (fstack_protector_all_opt)
       comp_ss << " -fstack-protector-all ";
    if (fstack_protector_strong_opt)
@@ -298,22 +361,6 @@ static Options CreateOptions(bool add_defaults=true) {
       comp_ss << " -include=" << include << " ";
    for ( auto inc_dir : I_opt )
       comp_ss << " -I" << inc_dir << " ";
-   for ( auto lib_dir : L_opt )
-      link_ss << " -L" << lib_dir << " ";
-   for ( auto library : l_opt )
-      link_ss << " -l" << library << " ";
-   if (o_opt.empty()) {
-      comp_ss << " -o a.out ";
-      link_ss << " a.out ";
-      link_ss << " -o a.out";
-      output_fn = "a.out";
-   }
-   else {
-      comp_ss << " -o " << o_opt << " ";
-      link_ss << o_opt << " ";
-      link_ss << " -o " << o_opt << " ";
-      output_fn = o_opt;
-   }
    if (O_opt.empty())
       comp_ss << " -O3 ";
    else
@@ -328,12 +375,59 @@ static Options CreateOptions(bool add_defaults=true) {
       comp_ss << " -w ";
    for ( auto warn : W_opt )
       comp_ss << " -W" << warn << " ";
-   
-   if (link)
-      comp_ss << " -c ";
-   
+
+#endif
+#ifdef ONLY_LD
+   if (!fno_stack_first_opt)
+      link_ss << " -stack-first ";
+   if (fno_lto_opt) {
+      link_ss << " --lto-O0 ";
+      if (!lto_opt_opt.empty())
+         std::cerr << "Warning : lto disabled but lto optimization level given\n";
+   }
+   else if (!lto_opt_opt.empty())
+      link_ss << " --lto-" << lto_opt_opt << " ";
+   else
+      link_ss << " --lto-O3 ";
+#else
+   if (fno_stack_first_opt)
+      link_ss << " -fno-stack-first ";
+   if (fno_lto_opt) 
+      link_ss << " -fno-lto-opt ";
+   else if (!lto_opt_opt.empty())
+      link_ss << " -lto-opt=" << lto_opt_opt << " ";
+#endif
+
+   for ( auto lib_dir : L_opt )
+      link_ss << " -L" << lib_dir << " ";
+   for ( auto library : l_opt )
+      link_ss << " -l" << library << " ";
+   if (o_opt.empty()) {
+      comp_ss << " -o a.out ";
+#ifndef ONLY_LD
+      link_ss << " a.out ";
+#endif
+      link_ss << " -o a.out";
+      output_fn = "a.out";
+   }
+   else {
+      comp_ss << " -o " << o_opt << " ";
+#ifndef ONLY_LD
+      link_ss << o_opt << " ";
+#endif
+      link_ss << " -o " << o_opt << " ";
+      output_fn = o_opt;
+   }
+ 
+#ifndef ONLY_LD 
    if (!eosio_imports_opt.empty())
       link_ss << " -eosio-imports=" << eosio_imports_opt << " ";
+#else
+   if (!eosio_imports_opt.empty())
+      link_ss << " --allow-undefined-file=" << eosio_imports_opt << " ";
+#endif
+
+#ifndef ONLY_LD
 #ifdef CPP_COMP
    if (faligned_allocation_opt)  
       comp_ss << " -faligned-allocation ";
@@ -344,6 +438,9 @@ static Options CreateOptions(bool add_defaults=true) {
    if (fstrict_vtable_pointers_opt)
       comp_ss << " -fstrict-vtable-pointers ";
 #endif
+#else
+   link_ss << " -lc++ -lc -leosio ";
+#endif
 
-   return {comp_ss.str(), link_ss.str(), output_fn, link};
+   return {comp_ss.str(), link_ss.str(), output_fn, link, pp_dir};
 }
