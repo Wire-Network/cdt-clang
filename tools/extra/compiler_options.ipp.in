@@ -256,9 +256,8 @@ static std::string GetCompDefaults() {
           " -fno-rtti -fno-exceptions "
 #endif
           " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE "
-          " -I${Boost_INCLUDE_DIR} "
           " -I${Boost_INCLUDE_DIR} ";
-   return std::string(ret+" -Xclang -load -Xclang "+WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff+" ");
+   return std::string(ret+" -Xclang -load -Xclang "+WhereAmI()+"/LLVMEosioApply"+eosio_apply_suff+" ");
 }
 
 #ifdef ONLY_LD
@@ -292,7 +291,7 @@ static Options CreateOptions(bool add_defaults=true) {
    if (!fno_cfl_aa_opt) {
       comp_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
 #ifdef ONLY_LD
-      link_ss << " -mllvm -use-cfl-aa-in-codegne=both ";
+      link_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
 #else
       link_ss << " -fno-cfl-aa ";
 #endif
@@ -312,10 +311,11 @@ static Options CreateOptions(bool add_defaults=true) {
       link_ss << " -L" << sysroot_opt << "/lib "; 
    }
    else {
-      comp_ss << " -I" << WhereAmI() << "/eosio.wasmsdk/../include/libcxx" << " -I" << WhereAmI() << "/eosio.wasmsdk/../include/libc ";
-      comp_ss << " --sysroot=" << WhereAmI() << "/eosio.wasmsdk/../eosio.wasmsdk ";
-      link_ss << " -L" << WhereAmI() << "/../eosio.wasmsdk/lib ";
+      comp_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc ";
+      comp_ss << " --sysroot=" << WhereAmI() << "/../ ";
+      link_ss << " -L" << WhereAmI() << "/../lib ";
    }
+   std::cout << comp_ss.str() << "\n";
    if (!isystem_opt.empty()) {
       comp_ss << " -isystem " << isystem_opt << " "; 
    }
@@ -389,6 +389,7 @@ static Options CreateOptions(bool add_defaults=true) {
       link_ss << " --lto-" << lto_opt_opt << " ";
    else
       link_ss << " --lto-O3 ";
+   link_ss << " -L" << WhereAmI() << "/../lib ";
 #else
    if (fno_stack_first_opt)
       link_ss << " -fno-stack-first ";
@@ -425,6 +426,8 @@ static Options CreateOptions(bool add_defaults=true) {
 #else
    if (!eosio_imports_opt.empty())
       link_ss << " --allow-undefined-file=" << eosio_imports_opt << " ";
+   else 
+      link_ss << " --allow-undefined-file=" << WhereAmI() << "/../eosio.imports ";
 #endif
 
 #ifndef ONLY_LD

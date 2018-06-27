@@ -23,7 +23,6 @@ int main(int argc, const char **argv) {
   cl::ParseCommandLineOptions(argc, argv, "eosio.ld (WebAssembly linker)");
   Options opts = CreateOptions();
 
-  std::cout << "OP " << opts.output_fn << "\n";
   std::string line;
   // link
   if (opts.link) {
@@ -39,6 +38,10 @@ int main(int argc, const char **argv) {
         std::cout << e.what() << "\n";
         return -1;
      }
+  }
+
+  if ( !boost::filesystem::exists( opts.output_fn ) ) {
+     return -1;
   }
 
   // finally any post processing
@@ -58,6 +61,9 @@ int main(int argc, const char **argv) {
         finalp.wait();
      } catch ( boost::process::process_error& e ) {
         std::cout << e.what() << std::endl;
+        return -1;
+     }
+     if ( !boost::filesystem::exists( opts.output_fn ) ) {
         return -1;
      }
    }
