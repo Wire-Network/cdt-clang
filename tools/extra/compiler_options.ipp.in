@@ -255,8 +255,7 @@ static std::string GetCompDefaults() {
 #ifdef CPP_COMP
           " -fno-rtti -fno-exceptions "
 #endif
-          " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE "
-          " -I${Boost_INCLUDE_DIR} ";
+          " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE ";
    return std::string(ret+" -Xclang -load -Xclang "+WhereAmI()+"/LLVMEosioApply"+eosio_apply_suff+" ");
 }
 
