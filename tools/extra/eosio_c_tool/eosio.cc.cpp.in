@@ -15,7 +15,7 @@ using namespace llvm;
 
 #define CPP_COMP 0
 #define COMPILER_NAME "eosio.cc"
-#include <compiler_options.ipp>
+#include <compiler_options.hpp>
 
 int main(int argc, const char **argv) {
 

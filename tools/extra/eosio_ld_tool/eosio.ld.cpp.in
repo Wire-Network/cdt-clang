@@ -13,7 +13,7 @@ using namespace boost::process;
 using namespace clang::tooling;
 using namespace llvm;
 #define ONLY_LD
-#include <compiler_options.ipp>
+#include <compiler_options.hpp>
 
 int main(int argc, const char **argv) {
 

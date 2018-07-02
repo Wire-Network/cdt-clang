@@ -1,4 +1,7 @@
+#pragma once
 #include <whereami.h>
+#include <boost/filesystem.hpp>
+#include <string>
 
 #ifdef ONLY_LD
 #define LD_CAT EosioLdToolCategory
@@ -251,12 +254,18 @@ static std::string WhereAmI() {
 
 static std::string GetCompDefaults() {
    const char* eosio_apply_suff = "${CMAKE_SHARED_LIBRARY_SUFFIX}";
+   std::string apply_lib;
+   if (boost::filesystem::exists(WhereAmI()+"/LLVMEosioApply"+eosio_apply_suff))
+      apply_lib = WhereAmI()+"/LLVMEosioApply"+eosio_apply_suff;
+   else if (boost::filesystem::exists(WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff))
+      apply_lib = WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff;
+   
    std::string ret = " --target=wasm32 -nostdlib -ffreestanding -fno-builtin "
 #ifdef CPP_COMP
           " -fno-rtti -fno-exceptions "
 #endif
           " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE ";
-   return std::string(ret+" -Xclang -load -Xclang "+WhereAmI()+"/LLVMEosioApply"+eosio_apply_suff+" ");
+   return std::string(ret+" -Xclang -load -Xclang "+apply_lib+" ");
 }
 
 #ifdef ONLY_LD
@@ -314,7 +323,7 @@ static Options CreateOptions(bool add_defaults=true) {
       comp_ss << " --sysroot=" << WhereAmI() << "/../ ";
       link_ss << " -L" << WhereAmI() << "/../lib ";
    }
-   std::cout << comp_ss.str() << "\n";
+
    if (!isystem_opt.empty()) {
       comp_ss << " -isystem " << isystem_opt << " "; 
    }
