@@ -18,9 +18,9 @@ using namespace llvm;
 int main(int argc, const char **argv) {
 
   cl::SetVersionPrinter([](llvm::raw_ostream& os) {
-        os << "eosio.ld version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
+        os << "eosio-ld version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
   });
-  cl::ParseCommandLineOptions(argc, argv, "eosio.ld (WebAssembly linker)");
+  cl::ParseCommandLineOptions(argc, argv, "eosio-ld (WebAssembly linker)");
   Options opts = CreateOptions();
 
   std::string line;
@@ -47,12 +47,12 @@ int main(int argc, const char **argv) {
   // finally any post processing
   if (!fno_post_pass_opt) {
      ipstream final_stream;
-     if ( !boost::filesystem::exists( opts.eosio_pp_dir+"/eosio.pp" ) ) {
+     if ( !boost::filesystem::exists( opts.eosio_pp_dir+"/eosio-pp" ) ) {
         std::cout << "Error: eosio.pp not found! (Try reinstalling eosio.wasmsdk)" << std::endl;
         return -1;
      }
         
-     std::string finalstr = std::string(opts.eosio_pp_dir+"/eosio.pp "+opts.output_fn);
+     std::string finalstr = std::string(opts.eosio_pp_dir+"/eosio-pp "+opts.output_fn);
      try {
         child finalp(finalstr.c_str(), std_out > final_stream);
         line = "";

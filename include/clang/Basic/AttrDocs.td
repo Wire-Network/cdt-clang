@@ -851,6 +851,13 @@ Sample usage:
   }];
 }
 
+def EosioActionDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``eosio-action`` attribute marks a method as being an eosio action.
+  }];
+}
+
 def NoSplitStackDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{

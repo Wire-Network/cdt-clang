@@ -1403,6 +1403,13 @@ def NoSplitStack : InheritableAttr {
   let Documentation = [NoSplitStackDocs];
 }
 
+def EosioAction : InheritableAttr {
+  let Spellings = [GCC<"eosio_action">];
+  let Subjects = SubjectList<[Function], WarnDiag,
+                             "functions">;
+  let Documentation = [EosioActionDocs];
+}
+
 def NonNull : InheritableParamAttr {
   let Spellings = [GCC<"nonnull">];
   let Subjects = SubjectList<[ObjCMethod, HasFunctionProto, ParmVar], WarnDiag,
