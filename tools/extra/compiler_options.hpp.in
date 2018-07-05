@@ -319,7 +319,7 @@ static Options CreateOptions(bool add_defaults=true) {
       link_ss << " -L" << sysroot_opt << "/lib "; 
    }
    else {
-      comp_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc  -I" << WhereAmI() << "/../include -I${Boost_INCLUDE_DIRS} ";
+      comp_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc   -I" << WhereAmI() << "/../include -I${Boost_INCLUDE_DIRS} ";
       comp_ss << " --sysroot=" << WhereAmI() << "/../ ";
       link_ss << " -L" << WhereAmI() << "/../lib ";
    }
