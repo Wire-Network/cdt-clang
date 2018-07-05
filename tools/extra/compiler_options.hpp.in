@@ -315,11 +315,11 @@ static Options CreateOptions(bool add_defaults=true) {
 #ifndef ONLY_LD
    if (!sysroot_opt.empty()) {
       comp_ss << " --sysroot " << sysroot_opt << " ";
-      comp_ss << " -I" << sysroot_opt << "/include/libcxx" << " -I" << sysroot_opt << "/include/libc -I${Boost_INCLUDE_DIRS} ";
+      comp_ss << " -I" << sysroot_opt << "/include/libcxx" << " -I" << sysroot_opt << "/include/libc -I" << sysroot_opt << " -I${Boost_INCLUDE_DIRS} ";
       link_ss << " -L" << sysroot_opt << "/lib "; 
    }
    else {
-      comp_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc  -I${Boost_INCLUDE_DIRS} ";
+      comp_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc  -I" << WhereAmI() << "/../include -I${Boost_INCLUDE_DIRS} ";
       comp_ss << " --sysroot=" << WhereAmI() << "/../ ";
       link_ss << " -L" << WhereAmI() << "/../lib ";
    }

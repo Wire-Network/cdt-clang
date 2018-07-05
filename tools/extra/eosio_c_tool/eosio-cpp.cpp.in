@@ -48,7 +48,7 @@ int main(int argc, const char **argv) {
   // then link
   if (opts.link) {
      ipstream link_stream;
-     std::string linkstr = std::string(WhereAmI()+"/eosio.ld "+opts.linker);
+     std::string linkstr = std::string(WhereAmI()+"/eosio-ld "+opts.linker);
      try {
         child link(linkstr.c_str(), std_out > link_stream);
         line = "";
