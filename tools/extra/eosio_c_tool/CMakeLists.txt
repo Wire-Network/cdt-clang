@@ -1,5 +1,6 @@
 set(LLVM_LINK_COMPONENTS support)
 
+set(Boost_USE_STATIC_LIBS ON)
 find_package(Boost 1.67.0 REQUIRED system filesystem)
 if(Boost_FOUND)
    include_directories (SYSTEM ${Boost_INCLUDE_DIR})
