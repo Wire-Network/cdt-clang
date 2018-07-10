@@ -168,6 +168,7 @@ static cl::opt<std::string> O_opt(
     "O",
     cl::desc("Optimization level s, 0-3"),
     cl::Prefix,
+    cl::ZeroOrMore,
     cl::cat(EosioCompilerToolCategory));
 static cl::opt<std::string> sysroot_opt(
     "sysroot",
