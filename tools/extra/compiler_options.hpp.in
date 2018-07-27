@@ -263,7 +263,7 @@ static std::string GetCompDefaults() {
    
    std::string ret = " --target=wasm32 -nostdlib -ffreestanding -fno-builtin "
 #ifdef CPP_COMP
-          " -fno-rtti -fno-exceptions --std=c++14 "
+          " -fno-rtti -fno-exceptions "
 #endif
           " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE ";
    return std::string(ret+" -Xclang -load -Xclang "+apply_lib+" ");
