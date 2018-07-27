@@ -263,7 +263,7 @@ static std::string GetCompDefaults() {
    
    std::string ret = " --target=wasm32 -nostdlib -ffreestanding -fno-builtin "
 #ifdef CPP_COMP
-          " -fno-rtti -fno-exceptions "
+          " -fno-rtti -fno-exceptions --std=c++14 "
 #endif
           " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE ";
    return std::string(ret+" -Xclang -load -Xclang "+apply_lib+" ");
@@ -441,6 +441,8 @@ static Options CreateOptions(bool add_defaults=true) {
 
 #ifndef ONLY_LD
 #ifdef CPP_COMP
+   if (! std_opt.emtpy())
+      comp_ss << " --std=" << std_opt << " ";
    if (faligned_allocation_opt)  
       comp_ss << " -faligned-allocation ";
    if (fcoroutine_ts_opt)  
