@@ -8,8 +8,14 @@
 #include "clang/Basic/Builtins.h"
 #include <boost/process.hpp>
 #include <boost/filesystem.hpp>
+
+#include <exception>
 #include <iostream>
 #include <sstream>
+#include <set>
+#include <map>
+
+#include "abi.hpp"
 
 // Declares llvm::cl::extrahelp.
 #include "llvm/Support/CommandLine.h"
@@ -18,14 +24,148 @@ using namespace clang::tooling;
 using namespace clang::ast_matchers;
 using namespace llvm;
 
+struct abigen_exception : public std::exception {
+   virtual const char* what() const throw() {
+      return "eosio.abigen fatal error";
+   }
+} abigen_ex;
+
 DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_actions");
 
-std::string get_type_alias( const clang::QualType& t ) {
-   return clang::QualType(t).getCanonicalType().getAsString();
+// get the base type of the typedef
+clang::QualType get_type_alias( const clang::QualType& t ) {
+   return clang::QualType(t).getCanonicalType();
 }
 
+// is the type a typedef?
 bool is_aliasing( const clang::QualType& t ) {
-   return t.getAsString().compare(get_type_alias(t)) != 0;
+   return t.getAsString().compare(get_type_alias(t).getAsString()) != 0;
+}
+
+// remove any qualifiers, tags and namespaces
+std::string get_base_type_name( const std::string& type ) {
+   std::stringstream output;
+   int i = type.length()-1;
+   for (; i > 0; i--)
+      if (type[i] == ':' || type[i] == ' ')
+         return type.substr(i+1); 
+   return type;
+}
+
+std::string translate_type( const clang::QualType& t ) {
+   std::map<std::string, std::string> translation_table =
+   {
+      {"unsigned __int128", "uint128"},
+      {"__int128", "int128"},
+      {"uint128_t", "uint128"},
+      {"int128_t", "int128"},
+
+      {"unsigned long long", "uint64"},
+      {"long long", "int64"},
+      {"uint64_t", "uint64"},
+      {"int64_t", "int64"},
+
+      {"unsigned long", "uint32"},
+      {"long", "int32"},
+      {"unsigned int", "uint32"},
+      {"int", "int32"},
+      {"uint32_t", "uint32"},
+      {"int32_t", "int32"},
+
+      {"unsigned short", "uint16"},
+      {"short", "int16"},
+      {"uint16_t", "uint16"},
+      {"int16_t", "int16"},
+
+      {"unsigned char", "uint8"},
+      {"char", "int8"},
+      {"uint8_t", "uint8"},
+      {"int8_t", "int8"},
+
+      {"float",  "float32"},
+      {"double", "float64"},
+      {"long double", "float128"}
+   }; 
+   
+   auto ret = translation_table[t.getAsString()];
+   if (ret == "")
+      return t.getAsString();
+   return ret;
+}
+
+bool is_name_type( const clang::QualType& t ) {
+   static const std::set<std::string> name_types = { "account_name",
+                                                     "permission_name",
+                                                     "table_name",
+                                                     "scope_name",
+                                                     "action_name" };
+   return name_types.count(t.getAsString()) >= 1;
+}
+
+bool is_builtin_type( const clang::QualType& t ) {
+   static const std::set<std::string> builtins =
+   {
+      "bool",
+      "int8",
+      "uint8",
+      "int16",
+      "uint16",
+      "int32",
+      "uint32",
+      "int64",
+      "uint64",
+      "int128",
+      "uint128",
+      "varint32",
+      "varuint32",
+      "float32",
+      "float64",
+      "float128",
+      "time_point",
+      "time_point_sec",
+      "block_timestamp_type",
+      "name",
+      "bytes",
+      "string",
+      "checksum160",
+      "checksum256",
+      "checksum512",
+      "public_key",
+      "signature",
+      "symbol",
+      "symbol_code",
+      "asset",
+      "extended_asset"
+   };
+   return builtins.count(t.getAsString()) >= 1;
+}
+
+abi_struct create_struct( const clang::CXXRecordDecl* decl ) {
+   abi_struct ret;
+   if ( decl->getNumBases() > 1 ) {
+      std::cerr << "Error: abigen can only handle single inheritance <class " << decl->getName().str() << ">\n";
+      throw abigen_ex;
+   }
+   else if ( decl->getNumBases() == 1 )
+      ret.base = decl->bases_begin()->getType().getAsString();
+
+   for ( auto field : decl->fields() ) {
+      ret.fields.push_back({field->getName().str(), field->getType().getAsString()});
+   }
+
+   ret.name = decl->getName().str();
+   return ret;
+}
+
+void add_struct( const clang::CXXMethodDecl* decl, abi& abi ) {
+   abi_struct new_struct;
+   new_struct.name = decl->getNameAsString();
+   for (auto param : decl->parameters() ) {
+      abi_struct param_struct;
+      if (param->getType().getTypePtr()->isRecordType()) {
+         param_struct = create_struct( param->getType().getTypePtr()->getAsCXXRecordDecl() );
+      }
+   }
 }
 
 class EosioActionMatcher : public MatchFinder::MatchCallback {
@@ -36,9 +176,16 @@ class EosioActionMatcher : public MatchFinder::MatchCallback {
                std::cout << "ACTION NAME: " << decl->getNameAsString() << "\n";
                auto params = decl->parameters();
                for (auto param : params) {
+                  abi_struct abis;
+                  if (param->getType().getTypePtr()->isRecordType())
+                     abis = create_struct( param->getType().getTypePtr()->getAsCXXRecordDecl() );
+                  std::cout << "BASE : " << abis.base << "\n";
                   std::cout << "PARAM NAME: " << param->getNameAsString() << "\n";
                   std::cout << "PARAM TT: " << clang::QualType(param->getType()).getCanonicalType().getAsString() << "\n";
-                  std::cout << "ALIASING: " << is_aliasing(param->getType()) << " : " << get_type_alias(param->getType()) << "\n";
+                  std::cout << "PARAM TT2: " << get_base_type_name(clang::QualType(param->getType()).getAsString()) << "\n";
+                  std::cout << "ALIASING: " << is_aliasing(param->getType()) << " : " << get_type_alias(param->getType()).getAsString() << "\n";
+                  std::cout << "Is name type : " << is_name_type(param->getType()) << "\n";
+                  std::cout << "Translated : " << translate_type(param->getType()) << " " << translate_type(get_type_alias(param->getType())) << "\n";
                   param->dump();
                }
                //decl->dump();
