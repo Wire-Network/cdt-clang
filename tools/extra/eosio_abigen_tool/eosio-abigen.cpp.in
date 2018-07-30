@@ -1,0 +1,65 @@
+// Declares clang::SyntaxOnlyAction.
+#include "clang/Frontend/FrontendActions.h"
+#include "clang/Tooling/CommonOptionsParser.h"
+#include "clang/Tooling/Tooling.h"
+#include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/AST/DeclCXX.h"
+#include "clang/Basic/Builtins.h"
+#include <boost/process.hpp>
+#include <boost/filesystem.hpp>
+#include <iostream>
+#include <sstream>
+
+// Declares llvm::cl::extrahelp.
+#include "llvm/Support/CommandLine.h"
+using namespace boost::process;
+using namespace clang::tooling;
+using namespace clang::ast_matchers;
+using namespace llvm;
+
+DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_actions");
+
+std::string get_type_alias( const clang::QualType& t ) {
+   return clang::QualType(t).getCanonicalType().getAsString();
+}
+
+bool is_aliasing( const clang::QualType& t ) {
+   return t.getAsString().compare(get_type_alias(t)) != 0;
+}
+
+class EosioActionMatcher : public MatchFinder::MatchCallback {
+   public:
+      virtual void run( const MatchFinder::MatchResult& res ) {
+         if (const clang::CXXMethodDecl* decl = res.Nodes.getNodeAs<clang::CXXMethodDecl>("eosio_actions")->getCanonicalDecl()) {
+            if (decl->isEosioAction()) {
+               std::cout << "ACTION NAME: " << decl->getNameAsString() << "\n";
+               auto params = decl->parameters();
+               for (auto param : params) {
+                  std::cout << "PARAM NAME: " << param->getNameAsString() << "\n";
+                  std::cout << "PARAM TT: " << clang::QualType(param->getType()).getCanonicalType().getAsString() << "\n";
+                  std::cout << "ALIASING: " << is_aliasing(param->getType()) << " : " << get_type_alias(param->getType()) << "\n";
+                  param->dump();
+               }
+               //decl->dump();
+            }
+         }
+      }
+};
+
+int main(int argc, const char **argv) {
+
+  cl::SetVersionPrinter([](llvm::raw_ostream& os) {
+        os << "eosio-abigen version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
+  });
+  //cl::ParseCommandLineOptions(argc, argv, "eosio-abigen (WebAssembly linker)");
+  cl::OptionCategory cat("eosio-abigen", "generates an abi from C++ project input");
+  CommonOptionsParser opts( argc, argv, cat, 0 );
+
+  ClangTool tool( opts.getCompilations(), opts.getSourcePathList());
+   
+  EosioActionMatcher eosio_action_matcher;
+  MatchFinder finder;
+  finder.addMatcher(function_decl_matcher, &eosio_action_matcher);
+  return tool.run(newFrontendActionFactory(&finder).get());
+}

@@ -4,6 +4,7 @@ set(EOSIO_VER_REVISION "0")
 
 add_subdirectory(eosio_c_tool)
 add_subdirectory(eosio_ld_tool)
+add_subdirectory(eosio_abigen_tool)
 
 set(EOSIO_STACK_SIZE "8192")
 

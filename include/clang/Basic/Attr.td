@@ -929,6 +929,18 @@ def C11NoReturn : InheritableAttr {
   let Documentation = [C11NoReturnDocs];
 }
 
+def EosioAction : InheritableAttr {
+   let Spellings = [CXX11<"eosio", "action">];
+   let Subjects = SubjectList<[CXXMethod]>;
+   let Documentation = [EosioActionDocs];
+}
+
+def EosioTable : InheritableAttr {
+   let Spellings = [CXX11<"eosio", "table">];
+   let Subjects = SubjectList<[CXXRecord]>;
+   let Documentation = [EosioTableDocs];
+}
+
 def CXX11NoReturn : InheritableAttr {
   let Spellings = [CXX11<"", "noreturn", 200809>];
   let Subjects = SubjectList<[Function], ErrorDiag>;
@@ -1401,13 +1413,6 @@ def NoSplitStack : InheritableAttr {
   let Spellings = [GCC<"no_split_stack">];
   let Subjects = SubjectList<[Function], ErrorDiag>;
   let Documentation = [NoSplitStackDocs];
-}
-
-def EosioAction : InheritableAttr {
-  let Spellings = [GCC<"eosio_action">];
-  let Subjects = SubjectList<[Function], WarnDiag,
-                             "functions">;
-  let Documentation = [EosioActionDocs];
 }
 
 def NonNull : InheritableParamAttr {
