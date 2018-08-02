@@ -11,11 +11,15 @@
 
 #include <exception>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <set>
 #include <map>
+#include <chrono>
+#include <ctime>
 
 #include "abi.hpp"
+#include <jsoncons/json.hpp>
 
 // Declares llvm::cl::extrahelp.
 #include "llvm/Support/CommandLine.h"
@@ -23,6 +27,7 @@ using namespace boost::process;
 using namespace clang::tooling;
 using namespace clang::ast_matchers;
 using namespace llvm;
+using jsoncons::json;
 
 struct abigen_exception : public std::exception {
    virtual const char* what() const throw() {
@@ -30,7 +35,8 @@ struct abigen_exception : public std::exception {
    }
 } abigen_ex;
 
-DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_actions");
+DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_abis");
+DeclarationMatcher record_decl_matcher = cxxRecordDecl().bind("eosio_abis");
 
 // get the base type of the typedef
 clang::QualType get_type_alias( const clang::QualType& t ) {
@@ -42,14 +48,19 @@ bool is_aliasing( const clang::QualType& t ) {
    return t.getAsString().compare(get_type_alias(t).getAsString()) != 0;
 }
 
+// is the type a CXX class/struct
+bool is_cxx_record( const clang::QualType& t ) {
+   return t.getTypePtr()->isRecordType();
+}
+
 // remove any qualifiers, tags and namespaces
-std::string get_base_type_name( const std::string& type ) {
-   std::stringstream output;
-   int i = type.length()-1;
+std::string get_base_type_name( const clang::QualType& type ) {
+   std::string type_str = type.getAsString();
+   int i = type_str.length()-1;
    for (; i > 0; i--)
-      if (type[i] == ':' || type[i] == ' ')
-         return type.substr(i+1); 
-   return type;
+      if (type_str[i] == ':' || type_str[i] == ' ')
+         return type_str.substr(i+1); 
+   return type_str;
 }
 
 std::string translate_type( const clang::QualType& t ) {
@@ -84,7 +95,13 @@ std::string translate_type( const clang::QualType& t ) {
 
       {"float",  "float32"},
       {"double", "float64"},
-      {"long double", "float128"}
+      {"long double", "float128"},
+
+      {"account_name", "name"},
+      {"permission_name", "name"},
+      {"table_name", "name"},
+      {"scope_name", "name"},
+      {"action_name", "name"}
    }; 
    
    auto ret = translation_table[t.getAsString()];
@@ -93,16 +110,17 @@ std::string translate_type( const clang::QualType& t ) {
    return ret;
 }
 
-bool is_name_type( const clang::QualType& t ) {
-   static const std::set<std::string> name_types = { "account_name",
+bool is_name_type( const std::string& t ) {
+   static const std::set<std::string> name_types = { "name", 
+                                                     "account_name",
                                                      "permission_name",
                                                      "table_name",
                                                      "scope_name",
                                                      "action_name" };
-   return name_types.count(t.getAsString()) >= 1;
+   return name_types.count(t) >= 1;
 }
 
-bool is_builtin_type( const clang::QualType& t ) {
+bool is_builtin_type( const std::string& t ) {
    static const std::set<std::string> builtins =
    {
       "bool",
@@ -137,7 +155,17 @@ bool is_builtin_type( const clang::QualType& t ) {
       "asset",
       "extended_asset"
    };
-   return builtins.count(t.getAsString()) >= 1;
+   return builtins.count(t) >= 1;
+}
+
+void add_typedef( const clang::QualType& t, abi& abi ) {
+}
+
+std::string get_type( const clang::QualType& t ) {
+   std::string type = translate_type( t );
+   if ( !is_builtin_type( type ) && !is_name_type( type ) )
+      type = get_base_type_name( t );
+   return type;
 }
 
 abi_struct create_struct( const clang::CXXRecordDecl* decl ) {
@@ -146,33 +174,74 @@ abi_struct create_struct( const clang::CXXRecordDecl* decl ) {
       std::cerr << "Error: abigen can only handle single inheritance <class " << decl->getName().str() << ">\n";
       throw abigen_ex;
    }
-   else if ( decl->getNumBases() == 1 )
-      ret.base = decl->bases_begin()->getType().getAsString();
+   else if ( decl->getNumBases() == 1 ) {
+      ret.base = get_type(decl->bases_begin()->getType());
+   }
 
    for ( auto field : decl->fields() ) {
-      ret.fields.push_back({field->getName().str(), field->getType().getAsString()});
+      ret.fields.push_back({field->getName().str(), get_type(field->getType())});
    }
 
    ret.name = decl->getName().str();
    return ret;
 }
 
+void add_struct( const clang::CXXRecordDecl* decl, abi& abi ) {
+   abi_struct ret;
+   if ( decl->getNumBases() > 1 ) {
+      std::cerr << "Error: abigen can only handle single inheritance <class " << decl->getName().str() << ">\n";
+      throw abigen_ex;
+   }
+   else if ( decl->getNumBases() == 1 )
+      ret.base = get_type(decl->bases_begin()->getType());
+
+   for ( auto field : decl->fields() ) {
+      field->dump();
+      ret.fields.push_back({field->getName().str(), get_type(field->getType())});
+      std::cout << "FIELDDDF " << get_type(field->getType()) << "\n";
+   }
+
+   ret.name = decl->getName().str();
+   if (!abi.structs.insert(ret).second) {
+      std::cerr << "Error: abi contains multiple occurrences of " << ret.name << "\n";
+      throw abigen_ex;
+   }
+}
+
 void add_struct( const clang::CXXMethodDecl* decl, abi& abi ) {
    abi_struct new_struct;
    new_struct.name = decl->getNameAsString();
    for (auto param : decl->parameters() ) {
-      abi_struct param_struct;
-      if (param->getType().getTypePtr()->isRecordType()) {
-         param_struct = create_struct( param->getType().getTypePtr()->getAsCXXRecordDecl() );
-      }
+      if (param->getType().getTypePtr()->isRecordType())
+         add_struct( param->getType().getTypePtr()->getAsCXXRecordDecl(), abi );
    }
 }
 
-class EosioActionMatcher : public MatchFinder::MatchCallback {
+std::string generate_json_comment() {
+   std::stringstream ss;
+   ss << "This file was generated with eosio-abigen.";
+   ss << " DO NOT EDIT ";
+   auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+   ss << std::ctime(&t);
+   auto output = ss.str();
+   return output.substr(0, output.length()-1); // remove the newline character
+}
+
+json abi_to_json( const abi& abi ) {
+   json o;
+   o["____comment"] = generate_json_comment();
+   o["version"]     = abi.version;
+   return o;
+}
+
+class EosioActionMethodMatcher : public MatchFinder::MatchCallback {
    public:
       virtual void run( const MatchFinder::MatchResult& res ) {
-         if (const clang::CXXMethodDecl* decl = res.Nodes.getNodeAs<clang::CXXMethodDecl>("eosio_actions")->getCanonicalDecl()) {
+         if (const clang::CXXMethodDecl* decl = res.Nodes.getNodeAs<clang::CXXMethodDecl>("eosio_abis")->getCanonicalDecl()) {
+            abi abi;
             if (decl->isEosioAction()) {
+               add_struct(decl, abi);
+               dump(abi);
                std::cout << "ACTION NAME: " << decl->getNameAsString() << "\n";
                auto params = decl->parameters();
                for (auto param : params) {
@@ -182,9 +251,9 @@ class EosioActionMatcher : public MatchFinder::MatchCallback {
                   std::cout << "BASE : " << abis.base << "\n";
                   std::cout << "PARAM NAME: " << param->getNameAsString() << "\n";
                   std::cout << "PARAM TT: " << clang::QualType(param->getType()).getCanonicalType().getAsString() << "\n";
-                  std::cout << "PARAM TT2: " << get_base_type_name(clang::QualType(param->getType()).getAsString()) << "\n";
+                  //std::cout << "PARAM TT2: " << get_base_type_name(clang::QualType(param->getType()).getAsString()) << "\n";
                   std::cout << "ALIASING: " << is_aliasing(param->getType()) << " : " << get_type_alias(param->getType()).getAsString() << "\n";
-                  std::cout << "Is name type : " << is_name_type(param->getType()) << "\n";
+                  //std::cout << "Is name type : " << is_name_type(param->getType()) << "\n";
                   std::cout << "Translated : " << translate_type(param->getType()) << " " << translate_type(get_type_alias(param->getType())) << "\n";
                   param->dump();
                }
@@ -194,19 +263,34 @@ class EosioActionMatcher : public MatchFinder::MatchCallback {
       }
 };
 
+class EosioActionRecordMatcher : public MatchFinder::MatchCallback {
+   public:
+      virtual void run( const MatchFinder::MatchResult& res ) {
+         if (const clang::CXXRecordDecl* decl = res.Nodes.getNodeAs<clang::CXXRecordDecl>("eosio_abis")) {
+            if (decl->isEosioAction()) {
+               std::cout << "ACTION NAME : " << decl->getNameAsString() << "\n";
+            }
+         }
+      }
+};
+
 int main(int argc, const char **argv) {
 
-  cl::SetVersionPrinter([](llvm::raw_ostream& os) {
+   cl::SetVersionPrinter([](llvm::raw_ostream& os) {
         os << "eosio-abigen version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
   });
-  //cl::ParseCommandLineOptions(argc, argv, "eosio-abigen (WebAssembly linker)");
-  cl::OptionCategory cat("eosio-abigen", "generates an abi from C++ project input");
-  CommonOptionsParser opts( argc, argv, cat, 0 );
+   cl::OptionCategory cat("eosio-abigen", "generates an abi from C++ project input");
+   CommonOptionsParser opts( argc, argv, cat, 0 );
 
-  ClangTool tool( opts.getCompilations(), opts.getSourcePathList());
-   
-  EosioActionMatcher eosio_action_matcher;
-  MatchFinder finder;
-  finder.addMatcher(function_decl_matcher, &eosio_action_matcher);
-  return tool.run(newFrontendActionFactory(&finder).get());
+   ClangTool tool( opts.getCompilations(), opts.getSourcePathList());
+   abi aa;
+   std::ofstream output("test.abi");
+   output << pretty_print(abi_to_json(aa));
+   output.close();
+   EosioActionMethodMatcher eosio_action_method_matcher;
+   EosioActionRecordMatcher eosio_action_record_matcher;
+   MatchFinder finder;
+   finder.addMatcher(function_decl_matcher, &eosio_action_method_matcher);
+   finder.addMatcher(record_decl_matcher, &eosio_action_record_matcher);
+   return tool.run(newFrontendActionFactory(&finder).get());
 }

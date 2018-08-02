@@ -52,6 +52,7 @@
 #include <iterator>
 #include <memory>
 #include <vector>
+#include <iostream>
 
 namespace clang {
 
@@ -724,6 +725,8 @@ public:
 
   /// Iterator that traverses the base classes of a class.
   using base_class_const_iterator = const CXXBaseSpecifier *;
+  bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
+
 
   CXXRecordDecl *getCanonicalDecl() override {
     return cast<CXXRecordDecl>(RecordDecl::getCanonicalDecl());

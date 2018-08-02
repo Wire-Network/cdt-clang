@@ -8,6 +8,6 @@ add_subdirectory(eosio_abigen_tool)
 
 set(EOSIO_STACK_SIZE "8192")
 
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/compiler_options.hpp.in ${CMAKE_BINARY_DIR}/compiler_options.hpp)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/compiler_options.hpp.in ${CMAKE_BINARY_DIR}/compiler_options.hpp)
 
 

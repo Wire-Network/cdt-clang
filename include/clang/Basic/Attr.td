@@ -931,7 +931,7 @@ def C11NoReturn : InheritableAttr {
 
 def EosioAction : InheritableAttr {
    let Spellings = [CXX11<"eosio", "action">];
-   let Subjects = SubjectList<[CXXMethod]>;
+   let Subjects = SubjectList<[CXXRecord, CXXMethod]>;
    let Documentation = [EosioActionDocs];
 }
 
