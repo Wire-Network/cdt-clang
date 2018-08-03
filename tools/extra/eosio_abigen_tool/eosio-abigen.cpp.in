@@ -13,6 +13,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <memory>
 #include <set>
 #include <map>
 #include <chrono>
@@ -37,31 +38,7 @@ struct abigen_exception : public std::exception {
 
 DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_abis");
 DeclarationMatcher record_decl_matcher = cxxRecordDecl().bind("eosio_abis");
-
-// get the base type of the typedef
-clang::QualType get_type_alias( const clang::QualType& t ) {
-   return clang::QualType(t).getCanonicalType();
-}
-
-// is the type a typedef?
-bool is_aliasing( const clang::QualType& t ) {
-   return t.getAsString().compare(get_type_alias(t).getAsString()) != 0;
-}
-
-// is the type a CXX class/struct
-bool is_cxx_record( const clang::QualType& t ) {
-   return t.getTypePtr()->isRecordType();
-}
-
-// remove any qualifiers, tags and namespaces
-std::string get_base_type_name( const clang::QualType& type ) {
-   std::string type_str = type.getAsString();
-   int i = type_str.length()-1;
-   for (; i > 0; i--)
-      if (type_str[i] == ':' || type_str[i] == ' ')
-         return type_str.substr(i+1); 
-   return type_str;
-}
+abi _abi;
 
 std::string translate_type( const clang::QualType& t ) {
    std::map<std::string, std::string> translation_table =
@@ -111,8 +88,7 @@ std::string translate_type( const clang::QualType& t ) {
 }
 
 bool is_name_type( const std::string& t ) {
-   static const std::set<std::string> name_types = { "name", 
-                                                     "account_name",
+   static const std::set<std::string> name_types = { "account_name",
                                                      "permission_name",
                                                      "table_name",
                                                      "scope_name",
@@ -158,7 +134,17 @@ bool is_builtin_type( const std::string& t ) {
    return builtins.count(t) >= 1;
 }
 
-void add_typedef( const clang::QualType& t, abi& abi ) {
+bool is_cxx_record( const clang::QualType& t ) {
+   return t.getTypePtr()->isRecordType();
+}
+
+std::string get_base_type_name( const clang::QualType& type ) {
+   std::string type_str = type.getAsString();
+   int i = type_str.length()-1;
+   for (; i > 0; i--)
+      if (type_str[i] == ':' || type_str[i] == ' ')
+         return type_str.substr(i+1); 
+   return type_str;
 }
 
 std::string get_type( const clang::QualType& t ) {
@@ -168,22 +154,24 @@ std::string get_type( const clang::QualType& t ) {
    return type;
 }
 
-abi_struct create_struct( const clang::CXXRecordDecl* decl ) {
-   abi_struct ret;
-   if ( decl->getNumBases() > 1 ) {
-      std::cerr << "Error: abigen can only handle single inheritance <class " << decl->getName().str() << ">\n";
-      throw abigen_ex;
-   }
-   else if ( decl->getNumBases() == 1 ) {
-      ret.base = get_type(decl->bases_begin()->getType());
-   }
+std::string get_type_alias( const clang::QualType& t ) {
+   if (is_name_type(get_base_type_name(t)))
+      return "name";
+   return get_type(clang::QualType(t).getCanonicalType());
+}
 
-   for ( auto field : decl->fields() ) {
-      ret.fields.push_back({field->getName().str(), get_type(field->getType())});
-   }
+bool is_aliasing( const clang::QualType& t ) {
+   std::cout << "TD : " << get_base_type_name(t) << " " << get_type_alias(t) << "\n";
+   if (is_name_type(get_base_type_name(t)))
+      return true;
+   return get_base_type_name(t).compare(get_type_alias(t)) != 0;
+}
 
-   ret.name = decl->getName().str();
-   return ret;
+void add_typedef( const clang::QualType& t, abi& abi ) {
+   abi_typedef ret;
+   ret.new_type_name = get_type( t );
+   ret.type = get_type_alias( t );
+   abi.typedefs.insert(ret);
 }
 
 void add_struct( const clang::CXXRecordDecl* decl, abi& abi ) {
@@ -198,23 +186,24 @@ void add_struct( const clang::CXXRecordDecl* decl, abi& abi ) {
    for ( auto field : decl->fields() ) {
       field->dump();
       ret.fields.push_back({field->getName().str(), get_type(field->getType())});
-      std::cout << "FIELDDDF " << get_type(field->getType()) << "\n";
    }
 
    ret.name = decl->getName().str();
-   if (!abi.structs.insert(ret).second) {
-      std::cerr << "Error: abi contains multiple occurrences of " << ret.name << "\n";
-      throw abigen_ex;
-   }
+   abi.structs.insert(ret);
 }
 
 void add_struct( const clang::CXXMethodDecl* decl, abi& abi ) {
    abi_struct new_struct;
    new_struct.name = decl->getNameAsString();
    for (auto param : decl->parameters() ) {
-      if (param->getType().getTypePtr()->isRecordType())
-         add_struct( param->getType().getTypePtr()->getAsCXXRecordDecl(), abi );
+      auto param_type = param->getType();
+      if (is_aliasing(param_type))
+         add_typedef(param_type, abi);
+      if (param_type.getTypePtr()->isRecordType()) {
+         add_struct( param_type.getTypePtr()->getAsCXXRecordDecl(), abi );
+      }
    }
+   abi.structs.insert(new_struct);
 }
 
 std::string generate_json_comment() {
@@ -227,11 +216,51 @@ std::string generate_json_comment() {
    return output.substr(0, output.length()-1); // remove the newline character
 }
 
+json struct_to_json( const abi_struct& s ) {
+   json o;
+   o["name"] = s.name;
+   o["base"] = s.base;
+   o["fields"] = json::array();
+   for ( auto field : s.fields ) {
+      json f;
+      f["name"] = field.name;
+      f["type"] = field.type;
+      o["fields"].push_back(f);
+   }
+   return o;
+}
+
+json typedef_to_json( const abi_typedef& t ) {
+   json o;
+   o["new_type_name"] = t.new_type_name;
+   o["type"]          = t.type;
+   return o;
+}
+
 json abi_to_json( const abi& abi ) {
    json o;
    o["____comment"] = generate_json_comment();
    o["version"]     = abi.version;
+   o["structs"]     = json::array();
+   for ( auto s : abi.structs ) {
+      o["structs"].push_back(struct_to_json(s));
+   }
+   o["types"]       = json::array();
+   for ( auto t : abi.typedefs ) {
+      o["types"].push_back(typedef_to_json( t ));
+   }
+   o["actions"]     = json::array();
+   /*
+   for ( auto a : abi.actions ) {
+      o["actions"].push_back(
+   }
+   */
    return o;
+}
+
+abi& get_abi_ref() {
+   static std::unique_ptr<abi> _abi = make_unique<abi>();
+   return *_abi;
 }
 
 class EosioActionMethodMatcher : public MatchFinder::MatchCallback {
@@ -240,27 +269,17 @@ class EosioActionMethodMatcher : public MatchFinder::MatchCallback {
          if (const clang::CXXMethodDecl* decl = res.Nodes.getNodeAs<clang::CXXMethodDecl>("eosio_abis")->getCanonicalDecl()) {
             abi abi;
             if (decl->isEosioAction()) {
-               add_struct(decl, abi);
-               dump(abi);
-               std::cout << "ACTION NAME: " << decl->getNameAsString() << "\n";
+               add_struct(decl, get_abi_ref());
                auto params = decl->parameters();
                for (auto param : params) {
                   abi_struct abis;
                   if (param->getType().getTypePtr()->isRecordType())
-                     abis = create_struct( param->getType().getTypePtr()->getAsCXXRecordDecl() );
-                  std::cout << "BASE : " << abis.base << "\n";
-                  std::cout << "PARAM NAME: " << param->getNameAsString() << "\n";
-                  std::cout << "PARAM TT: " << clang::QualType(param->getType()).getCanonicalType().getAsString() << "\n";
-                  //std::cout << "PARAM TT2: " << get_base_type_name(clang::QualType(param->getType()).getAsString()) << "\n";
-                  std::cout << "ALIASING: " << is_aliasing(param->getType()) << " : " << get_type_alias(param->getType()).getAsString() << "\n";
-                  //std::cout << "Is name type : " << is_name_type(param->getType()) << "\n";
-                  std::cout << "Translated : " << translate_type(param->getType()) << " " << translate_type(get_type_alias(param->getType())) << "\n";
-                  param->dump();
+                     add_struct(param->getType().getTypePtr()->getAsCXXRecordDecl(), get_abi_ref());
                }
-               //decl->dump();
             }
          }
       }
+
 };
 
 class EosioActionRecordMatcher : public MatchFinder::MatchCallback {
@@ -283,14 +302,16 @@ int main(int argc, const char **argv) {
    CommonOptionsParser opts( argc, argv, cat, 0 );
 
    ClangTool tool( opts.getCompilations(), opts.getSourcePathList());
-   abi aa;
-   std::ofstream output("test.abi");
-   output << pretty_print(abi_to_json(aa));
-   output.close();
    EosioActionMethodMatcher eosio_action_method_matcher;
    EosioActionRecordMatcher eosio_action_record_matcher;
    MatchFinder finder;
    finder.addMatcher(function_decl_matcher, &eosio_action_method_matcher);
    finder.addMatcher(record_decl_matcher, &eosio_action_record_matcher);
-   return tool.run(newFrontendActionFactory(&finder).get());
+   auto tool_run = tool.run(newFrontendActionFactory(&finder).get());
+
+   std::ofstream output("test.abi");
+   output << pretty_print(abi_to_json(get_abi_ref()));
+   output.close();
+
+   return tool_run;
 }

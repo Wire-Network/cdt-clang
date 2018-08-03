@@ -6,8 +6,9 @@
 #include <unordered_set>
 
 struct abi_typedef {
-   std::string name;
-   std::string base_type;
+   std::string new_type_name;
+   std::string type;
+   bool operator<(const abi_typedef& t) const { return new_type_name < t.new_type_name; }
 };
 
 struct abi_field {
@@ -26,6 +27,7 @@ struct abi_struct {
 struct abi {
    std::string version = "eosio::abi/1.0";
    std::set<abi_struct> structs;
+   std::set<abi_typedef> typedefs;
 };
 
 inline void dump( const abi& abi ) {
