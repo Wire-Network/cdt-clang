@@ -83,6 +83,10 @@ static cl::opt<bool> c_opt(
     "c",
     cl::desc("Only run preprocess, compile, and assemble steps"),
     cl::cat(EosioCompilerToolCategory));
+static cl::opt<bool> color_diag_opt(
+    "fcolor-diagnostics",
+    cl::desc("Use colors in diagnostics"),
+    cl::cat(EosioCompilerToolCategory));
 static cl::opt<bool> dD_opt(
     "dD",
     cl::desc("Print macro definitions in -E mode in addition to normal output"),
@@ -261,7 +265,7 @@ static std::string GetCompDefaults() {
    else if (boost::filesystem::exists(WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff))
       apply_lib = WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff;
    
-   std::string ret = " --target=wasm32 -nostdlib -ffreestanding -fno-builtin "
+   std::string ret = " --target=wasm32 -nostdlib -ffreestanding -fno-builtin -fno-threadsafe-statics "
 #ifdef CPP_COMP
           " -fno-rtti -fno-exceptions "
 #endif
@@ -350,6 +354,8 @@ static Options CreateOptions(bool add_defaults=true) {
       comp_ss << " -emit-llvm ";
    if (E_opt)
       comp_ss << " -E ";
+   if (color_diag_opt)
+      comp_ss << "-fcolor-diagnostics ";
    if (finline_functions_opt)
       comp_ss << " -finline-functions ";
    if (finline_hint_functions_opt)
@@ -441,8 +447,8 @@ static Options CreateOptions(bool add_defaults=true) {
 
 #ifndef ONLY_LD
 #ifdef CPP_COMP
-   if (! std_opt.empty())
-      comp_ss << " --std=" << std_opt << " ";
+   if (!std_opt.empty())
+      comp_ss << " -std=" << std_opt << " ";
    if (faligned_allocation_opt)  
       comp_ss << " -faligned-allocation ";
    if (fcoroutine_ts_opt)  
