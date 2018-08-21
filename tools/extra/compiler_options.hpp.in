@@ -83,6 +83,11 @@ static cl::opt<std::string> x_opt(
       cl::Hidden,
       cl::Prefix,
       cl::cat(EosioCompilerToolCategory));
+static cl::opt<bool> pch_opt(
+      "fpch-preprocess",
+      cl::desc("<ignored>"),
+      cl::Hidden,
+      cl::cat(EosioCompilerToolCategory));
 static cl::opt<bool> CC_opt(
     "CC",
     cl::desc("Include comments from within macros in preprocessed output"),
