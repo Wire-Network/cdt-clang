@@ -81,6 +81,7 @@ static cl::opt<std::string> x_opt(
       "x",
       cl::desc("<ignored>"),
       cl::Hidden,
+      cl::Prefix,
       cl::cat(EosioCompilerToolCategory));
 static cl::opt<bool> CC_opt(
     "CC",
