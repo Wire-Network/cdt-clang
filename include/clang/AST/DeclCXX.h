@@ -726,6 +726,7 @@ public:
   /// Iterator that traverses the base classes of a class.
   using base_class_const_iterator = const CXXBaseSpecifier *;
   bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
+  bool isEosioTable() const { return hasAttr<EosioTableAttr>(); }
 
 
   CXXRecordDecl *getCanonicalDecl() override {

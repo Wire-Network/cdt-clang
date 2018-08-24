@@ -23,11 +23,36 @@ struct abi_struct {
    bool operator<(const abi_struct& s) const { return name < s.name; }
 };
 
+struct abi_action {
+   std::string name;
+   std::string type;
+   std::string ricardian_contract;
+   bool operator<(const abi_action& s) const { return name < s.name; }
+};
+
+struct abi_table {
+   std::string name;
+   std::string type;
+   std::string index_type;
+   std::vector<std::string> key_names;
+   std::vector<std::string> key_types;
+   bool operator<(const abi_table& t) const { return name < t.name; }
+};
+
+struct abi_error_message {
+   uint64_t    error_code;
+   std::string error_msg;
+};
+
 /// From eosio libraries/chain/include/eosio/chain/abi_def.hpp
 struct abi {
    std::string version = "eosio::abi/1.0";
-   std::set<abi_struct> structs;
+   std::set<abi_struct>  structs;
    std::set<abi_typedef> typedefs;
+   std::set<abi_action>  actions;
+   std::set<abi_table>   tables;
+   std::map<std::string, abi_table>   ptables;
+   std::vector<abi_error_message> error_messages;
 };
 
 inline void dump( const abi& abi ) {

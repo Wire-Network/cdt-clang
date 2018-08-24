@@ -5,6 +5,7 @@
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/Expr.h"
 #include "clang/Basic/Builtins.h"
 #include <boost/process.hpp>
 #include <boost/filesystem.hpp>
@@ -29,6 +30,7 @@ using namespace clang::tooling;
 using namespace clang::ast_matchers;
 using namespace llvm;
 using jsoncons::json;
+using jsoncons::ojson;
 
 struct abigen_exception : public std::exception {
    virtual const char* what() const throw() {
@@ -38,6 +40,8 @@ struct abigen_exception : public std::exception {
 
 DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_abis");
 DeclarationMatcher record_decl_matcher = cxxRecordDecl().bind("eosio_abis");
+TypeMatcher typedef_decl_matcher = type().bind("eosio_abis");
+
 abi _abi;
 
 std::string translate_type( const clang::QualType& t ) {
@@ -73,7 +77,7 @@ std::string translate_type( const clang::QualType& t ) {
       {"float",  "float32"},
       {"double", "float64"},
       {"long double", "float128"},
-
+      
       {"account_name", "name"},
       {"permission_name", "name"},
       {"table_name", "name"},
@@ -88,7 +92,8 @@ std::string translate_type( const clang::QualType& t ) {
 }
 
 bool is_name_type( const std::string& t ) {
-   static const std::set<std::string> name_types = { "account_name",
+   static const std::set<std::string> name_types = { "name", 
+                                                     "account_name",
                                                      "permission_name",
                                                      "table_name",
                                                      "scope_name",
@@ -161,7 +166,6 @@ std::string get_type_alias( const clang::QualType& t ) {
 }
 
 bool is_aliasing( const clang::QualType& t ) {
-   std::cout << "TD : " << get_base_type_name(t) << " " << get_type_alias(t) << "\n";
    if (is_name_type(get_base_type_name(t)))
       return true;
    return get_base_type_name(t).compare(get_type_alias(t)) != 0;
@@ -169,9 +173,22 @@ bool is_aliasing( const clang::QualType& t ) {
 
 void add_typedef( const clang::QualType& t, abi& abi ) {
    abi_typedef ret;
-   ret.new_type_name = get_type( t );
+   ret.new_type_name = get_base_type_name( t );
    ret.type = get_type_alias( t );
    abi.typedefs.insert(ret);
+}
+
+void add_action( const clang::CXXRecordDecl* decl, abi& abi ) {
+   abi_action ret;
+   ret.name = decl->getName().str();
+   ret.type = decl->getName().str();
+   abi.actions.insert(ret);
+}
+void add_action( const clang::CXXMethodDecl* decl, abi& abi ) {
+   abi_action ret;
+   ret.name = decl->getNameAsString();
+   ret.type = decl->getNameAsString();
+   abi.actions.insert(ret);
 }
 
 void add_struct( const clang::CXXRecordDecl* decl, abi& abi ) {
@@ -184,7 +201,6 @@ void add_struct( const clang::CXXRecordDecl* decl, abi& abi ) {
       ret.base = get_type(decl->bases_begin()->getType());
 
    for ( auto field : decl->fields() ) {
-      field->dump();
       ret.fields.push_back({field->getName().str(), get_type(field->getType())});
    }
 
@@ -202,8 +218,58 @@ void add_struct( const clang::CXXMethodDecl* decl, abi& abi ) {
       if (param_type.getTypePtr()->isRecordType()) {
          add_struct( param_type.getTypePtr()->getAsCXXRecordDecl(), abi );
       }
+      new_struct.fields.push_back({param->getNameAsString(), get_type(param_type)});
    }
    abi.structs.insert(new_struct);
+}
+
+std::string to_index_type( std::string t ) {
+   if ( t == "uint64" || t == "int64" )
+      return "i64";
+}
+
+void add_table( const clang::CXXRecordDecl* decl, abi& abi ) {
+   abi_table t;
+   t.type = decl->getNameAsString();
+   // get the primary_key name
+   for ( auto method : decl->methods() ) {
+      if ( method->getName() == "primary_key" ) 
+         if ( auto cs = dyn_cast<clang::CompoundStmt>(method->getBody()) )
+            if ( auto ret = dyn_cast<clang::ReturnStmt>(cs->body_front()) )
+               if ( auto ice = dyn_cast<clang::ImplicitCastExpr>(ret->getRetValue()) )
+                  if ( auto cmc = dyn_cast<clang::CXXMemberCallExpr>(ice->getSubExpr()) )
+                     if ( auto me = dyn_cast<clang::MemberExpr>(cmc->getCallee()) )
+                        if ( auto nm = dyn_cast<clang::MemberExpr>(me->getBase()) ) {
+                           t.key_names.push_back(nm->getMemberNameInfo().getName().getAsString());
+                           t.key_types.push_back(get_type(ice->getType()));
+                           t.index_type = to_index_type( get_type(ice->getType()) );
+                           abi.tables.insert(t);
+                        }
+   }
+}
+
+void add_possible_table( const clang::TemplateSpecializationType* type, abi& abi ) {
+   abi_table t;
+   if ( type->getNumArgs() >= 2 ) {
+      if ( clang::CallExpr* first = dyn_cast<clang::CallExpr>(type->getArg(0).getAsExpr()) ) {
+         if ( first->getNumArgs() == 1 ) {
+            if ( clang::ImplicitCastExpr* ic = dyn_cast<clang::ImplicitCastExpr>(first->getArg(0)) )
+               if ( clang::StringLiteral* n = dyn_cast<clang::StringLiteral>(ic->getSubExpr()) ) {
+                  clang::QualType second = type->getArg(1).getAsType();
+                  t.name = n->getString().str();
+                  t.type = get_type(second);
+                  int past_primary = 0;
+                  for ( auto& arg : type->template_arguments() ) {
+                     if ( past_primary < 2 ) {
+                        past_primary++;
+                        continue;
+                     }
+                  }
+                  abi.ptables.emplace(t.type, t);
+               }
+         }
+      }
+   }
 }
 
 std::string generate_json_comment() {
@@ -216,13 +282,13 @@ std::string generate_json_comment() {
    return output.substr(0, output.length()-1); // remove the newline character
 }
 
-json struct_to_json( const abi_struct& s ) {
-   json o;
+ojson struct_to_json( const abi_struct& s ) {
+   ojson o;
    o["name"] = s.name;
    o["base"] = s.base;
-   o["fields"] = json::array();
+   o["fields"] = ojson::array();
    for ( auto field : s.fields ) {
-      json f;
+      ojson f;
       f["name"] = field.name;
       f["type"] = field.type;
       o["fields"].push_back(f);
@@ -230,31 +296,61 @@ json struct_to_json( const abi_struct& s ) {
    return o;
 }
 
-json typedef_to_json( const abi_typedef& t ) {
-   json o;
+ojson typedef_to_json( const abi_typedef& t ) {
+   ojson o;
    o["new_type_name"] = t.new_type_name;
    o["type"]          = t.type;
    return o;
 }
 
-json abi_to_json( const abi& abi ) {
-   json o;
+ojson action_to_json( const abi_action& a ) {
+   ojson o;
+   o["name"] = a.name;
+   o["type"] = a.type;
+   o["ricardian_contract"] = a.ricardian_contract;
+   return o;
+}
+
+
+
+ojson table_to_json( const abi_table& t, const abi& abi ) {
+   ojson o;
+   o["name"] = abi.ptables.at(t.type).name;
+   o["type"] = t.type;
+   o["index_type"] = t.index_type;
+   o["key_names"] = ojson::array();
+   o["key_types"] = ojson::array();
+   o["key_names"].push_back(t.key_names[0]);
+   o["key_types"].push_back(t.key_types[0]);
+   /*
+   for ( auto name : abi.ptables.at(t.type).key_names ) 
+      o["key_names"].push_back(name);
+   for ( auto type : abi.ptables.at(t.type).key_types ) 
+      o["key_types"].push_back(type);
+      */
+   return o;
+}
+
+ojson abi_to_json( const abi& abi ) {
+   ojson o;
    o["____comment"] = generate_json_comment();
    o["version"]     = abi.version;
-   o["structs"]     = json::array();
+   o["structs"]     = ojson::array();
    for ( auto s : abi.structs ) {
       o["structs"].push_back(struct_to_json(s));
    }
-   o["types"]       = json::array();
+   o["types"]       = ojson::array();
    for ( auto t : abi.typedefs ) {
       o["types"].push_back(typedef_to_json( t ));
    }
-   o["actions"]     = json::array();
-   /*
+   o["actions"]     = ojson::array();
    for ( auto a : abi.actions ) {
-      o["actions"].push_back(
+      o["actions"].push_back(action_to_json( a ));
    }
-   */
+   o["tables"]     = ojson::array();
+   for ( auto t : abi.tables ) {
+      o["tables"].push_back(table_to_json( t, abi ));
+   }
    return o;
 }
 
@@ -263,18 +359,20 @@ abi& get_abi_ref() {
    return *_abi;
 }
 
-class EosioActionMethodMatcher : public MatchFinder::MatchCallback {
+class EosioMethodMatcher : public MatchFinder::MatchCallback {
    public:
       virtual void run( const MatchFinder::MatchResult& res ) {
          if (const clang::CXXMethodDecl* decl = res.Nodes.getNodeAs<clang::CXXMethodDecl>("eosio_abis")->getCanonicalDecl()) {
             abi abi;
             if (decl->isEosioAction()) {
                add_struct(decl, get_abi_ref());
+               add_action(decl, get_abi_ref());
                auto params = decl->parameters();
                for (auto param : params) {
                   abi_struct abis;
-                  if (param->getType().getTypePtr()->isRecordType())
+                  if (param->getType().getTypePtr()->isRecordType()) {
                      add_struct(param->getType().getTypePtr()->getAsCXXRecordDecl(), get_abi_ref());
+                  }
                }
             }
          }
@@ -282,12 +380,21 @@ class EosioActionMethodMatcher : public MatchFinder::MatchCallback {
 
 };
 
-class EosioActionRecordMatcher : public MatchFinder::MatchCallback {
+class EosioRecordMatcher : public MatchFinder::MatchCallback {
    public:
       virtual void run( const MatchFinder::MatchResult& res ) {
+         if (const clang::TemplateSpecializationType* type = res.Nodes.getNodeAs<clang::TemplateSpecializationType>("eosio_abis")) {
+//            type->dump();
+            add_possible_table( type, get_abi_ref() );
+         }
          if (const clang::CXXRecordDecl* decl = res.Nodes.getNodeAs<clang::CXXRecordDecl>("eosio_abis")) {
             if (decl->isEosioAction()) {
-               std::cout << "ACTION NAME : " << decl->getNameAsString() << "\n";
+               add_struct(decl, get_abi_ref());
+               add_action(decl, get_abi_ref());
+            }
+            if (decl->isEosioTable()) {
+               add_struct(decl, get_abi_ref());
+               add_table( decl, get_abi_ref());
             }
          }
       }
@@ -302,11 +409,12 @@ int main(int argc, const char **argv) {
    CommonOptionsParser opts( argc, argv, cat, 0 );
 
    ClangTool tool( opts.getCompilations(), opts.getSourcePathList());
-   EosioActionMethodMatcher eosio_action_method_matcher;
-   EosioActionRecordMatcher eosio_action_record_matcher;
+   EosioMethodMatcher eosio_method_matcher;
+   EosioRecordMatcher eosio_record_matcher;
    MatchFinder finder;
-   finder.addMatcher(function_decl_matcher, &eosio_action_method_matcher);
-   finder.addMatcher(record_decl_matcher, &eosio_action_record_matcher);
+   finder.addMatcher(function_decl_matcher, &eosio_method_matcher);
+   finder.addMatcher(record_decl_matcher, &eosio_record_matcher);
+   finder.addMatcher(typedef_decl_matcher, &eosio_record_matcher);
    auto tool_run = tool.run(newFrontendActionFactory(&finder).get());
 
    std::ofstream output("test.abi");
