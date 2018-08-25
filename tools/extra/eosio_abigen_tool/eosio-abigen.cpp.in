@@ -21,6 +21,7 @@
 #include <ctime>
 
 #include "abi.hpp"
+#include <whereami.h>
 #include <jsoncons/json.hpp>
 
 // Declares llvm::cl::extrahelp.
@@ -31,6 +32,23 @@ using namespace clang::ast_matchers;
 using namespace llvm;
 using jsoncons::json;
 using jsoncons::ojson;
+
+static std::string WhereAmI() {
+   static bool cached = false;
+   static std::vector<char> ret;
+   if (cached)
+      return {ret.data()};
+
+   int dirname_len = 0;
+   auto len = wai_getExecutablePath(NULL, 0, &dirname_len);
+   if (len <= 0)
+      return "";
+   ret.resize(len+1);
+   wai_getExecutablePath(ret.data(), len, &dirname_len);
+   ret[dirname_len] = '\0';
+   cached = true;
+   return {ret.data()};
+}
 
 struct abigen_exception : public std::exception {
    virtual const char* what() const throw() {
@@ -226,6 +244,7 @@ void add_struct( const clang::CXXMethodDecl* decl, abi& abi ) {
 std::string to_index_type( std::string t ) {
    if ( t == "uint64" || t == "int64" )
       return "i64";
+   return "i128";
 }
 
 void add_table( const clang::CXXRecordDecl* decl, abi& abi ) {
@@ -233,18 +252,23 @@ void add_table( const clang::CXXRecordDecl* decl, abi& abi ) {
    t.type = decl->getNameAsString();
    // get the primary_key name
    for ( auto method : decl->methods() ) {
+      //method->dump();
       if ( method->getName() == "primary_key" ) 
          if ( auto cs = dyn_cast<clang::CompoundStmt>(method->getBody()) )
-            if ( auto ret = dyn_cast<clang::ReturnStmt>(cs->body_front()) )
-               if ( auto ice = dyn_cast<clang::ImplicitCastExpr>(ret->getRetValue()) )
-                  if ( auto cmc = dyn_cast<clang::CXXMemberCallExpr>(ice->getSubExpr()) )
-                     if ( auto me = dyn_cast<clang::MemberExpr>(cmc->getCallee()) )
-                        if ( auto nm = dyn_cast<clang::MemberExpr>(me->getBase()) ) {
-                           t.key_names.push_back(nm->getMemberNameInfo().getName().getAsString());
-                           t.key_types.push_back(get_type(ice->getType()));
-                           t.index_type = to_index_type( get_type(ice->getType()) );
-                           abi.tables.insert(t);
-                        }
+            if ( auto ret = dyn_cast<clang::ReturnStmt>(cs->body_front()) ) {
+               if ( auto me = dyn_cast<clang::MemberExpr>(ret->getRetValue()->IgnoreImpCasts()) ) {
+                  auto name = me->getMemberNameInfo().getName().getAsString();
+                  t.key_names.push_back(name);
+                  for ( auto field : decl->fields() ) {
+                     if ( field->getName().str() == name ) {
+                        auto type = get_type( field->getType() );
+                        t.key_types.push_back(type);
+                        t.index_type = to_index_type(type);
+                     }
+                  }
+                  abi.tables.insert(t);
+               }
+            }
    }
 }
 
@@ -253,20 +277,29 @@ void add_possible_table( const clang::TemplateSpecializationType* type, abi& abi
    if ( type->getNumArgs() >= 2 ) {
       if ( clang::CallExpr* first = dyn_cast<clang::CallExpr>(type->getArg(0).getAsExpr()) ) {
          if ( first->getNumArgs() == 1 ) {
-            if ( clang::ImplicitCastExpr* ic = dyn_cast<clang::ImplicitCastExpr>(first->getArg(0)) )
-               if ( clang::StringLiteral* n = dyn_cast<clang::StringLiteral>(ic->getSubExpr()) ) {
-                  clang::QualType second = type->getArg(1).getAsType();
-                  t.name = n->getString().str();
-                  t.type = get_type(second);
-                  int past_primary = 0;
-                  for ( auto& arg : type->template_arguments() ) {
-                     if ( past_primary < 2 ) {
-                        past_primary++;
-                        continue;
+            if ( clang::StringLiteral* n = dyn_cast<clang::StringLiteral>(first->getArg(0)->IgnoreImpCasts()) ) {
+               clang::QualType second = type->getArg(1).getAsType();
+               t.name = n->getString().str();
+               t.type = get_type(second);
+               abi.ptables.emplace(t.type, t);
+               int past_primary = 0;
+               for ( auto& arg : type->template_arguments() ) {
+                  if ( past_primary < 2 ) {
+                     past_primary++;
+                     continue;
+                  }
+                  auto tst = dyn_cast<clang::TemplateSpecializationType>(arg.getAsType());
+                  if ( tst->getNumArgs() >= 2 ) {
+                     if ( auto first = dyn_cast<clang::CallExpr>(tst->getArg(0).getAsExpr()->IgnoreImpCasts()) ) {
+                        if ( clang::StringLiteral* n = dyn_cast<clang::StringLiteral>(first->getArg(0)->IgnoreImpCasts()) ) {
+                           auto second = dyn_cast<clang::TemplateSpecializationType>(tst->getArg(1).getAsType());
+                           abi.ptables[t.type].key_types.push_back(get_type(second->getArg(1).getAsType()));
+                           abi.ptables[t.type].key_names.push_back(n->getString().str());
+                        }
                      }
                   }
-                  abi.ptables.emplace(t.type, t);
                }
+            }
          }
       }
    }
@@ -322,12 +355,10 @@ ojson table_to_json( const abi_table& t, const abi& abi ) {
    o["key_types"] = ojson::array();
    o["key_names"].push_back(t.key_names[0]);
    o["key_types"].push_back(t.key_types[0]);
-   /*
    for ( auto name : abi.ptables.at(t.type).key_names ) 
       o["key_names"].push_back(name);
    for ( auto type : abi.ptables.at(t.type).key_types ) 
       o["key_types"].push_back(type);
-      */
    return o;
 }
 
@@ -384,7 +415,6 @@ class EosioRecordMatcher : public MatchFinder::MatchCallback {
    public:
       virtual void run( const MatchFinder::MatchResult& res ) {
          if (const clang::TemplateSpecializationType* type = res.Nodes.getNodeAs<clang::TemplateSpecializationType>("eosio_abis")) {
-//            type->dump();
             add_possible_table( type, get_abi_ref() );
          }
          if (const clang::CXXRecordDecl* decl = res.Nodes.getNodeAs<clang::CXXRecordDecl>("eosio_abis")) {
@@ -406,7 +436,39 @@ int main(int argc, const char **argv) {
         os << "eosio-abigen version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
   });
    cl::OptionCategory cat("eosio-abigen", "generates an abi from C++ project input");
-   CommonOptionsParser opts( argc, argv, cat, 0 );
+
+   cl::opt<std::string> abidir(
+    "output",
+    cl::desc("Set the output filename and fullpath"),
+    cl::Required,
+    cl::cat(cat));
+
+   std::vector<std::string> options;
+   for (size_t i=0; i < argc; i++)
+      options.push_back(argv[i]);
+
+   options.push_back("-extra-arg=--target=wasm32");
+   options.push_back("-extra-arg=-nostdlib");
+   options.push_back("-extra-arg=-ffreestanding");
+   options.push_back("-extra-arg=-fno-builtin");
+   options.push_back("-extra-arg=-fno-rtti");
+   options.push_back("-extra-arg=-fno-exceptions");
+   options.push_back("-extra-arg=-I${Boost_INCLUDE_DIRS}");
+   options.push_back("-extra-arg=-Wno-everything");
+   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../include/libcxx");
+   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../include/libc");
+   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../include");
+   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../../../../../libraries/libc++/libcxx/include");
+   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../../../../../libraries/libc/musl/include");
+   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../../../../../libraries");
+   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../../../../../libraries/boost/include");
+
+   int size = options.size();
+   const char** new_argv = new const char*[size];
+   for (size_t i=0; i < size; i++)
+      new_argv[i] = options[i].c_str();
+
+   CommonOptionsParser opts( size, new_argv, cat, 0 );
 
    ClangTool tool( opts.getCompilations(), opts.getSourcePathList());
    EosioMethodMatcher eosio_method_matcher;
@@ -417,7 +479,7 @@ int main(int argc, const char **argv) {
    finder.addMatcher(typedef_decl_matcher, &eosio_record_matcher);
    auto tool_run = tool.run(newFrontendActionFactory(&finder).get());
 
-   std::ofstream output("test.abi");
+   std::ofstream output(abidir);
    output << pretty_print(abi_to_json(get_abi_ref()));
    output.close();
 

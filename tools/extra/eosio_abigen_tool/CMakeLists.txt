@@ -9,7 +9,11 @@ endif()
 include_directories(include)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio-abigen.cpp.in ${CMAKE_BINARY_DIR}/eosio-abigen.cpp)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wdollar-in-identifier-extension")
+if(APPLE)
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wdollar-in-identifier-extension")
+endif()
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+
 add_clang_executable(eosio-abigen ${CMAKE_BINARY_DIR}/eosio-abigen.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../whereami/whereami.cpp)
 target_compile_options(eosio-abigen PRIVATE -fexceptions)
 target_include_directories(eosio-abigen PUBLIC ${Boost_INCLUDE_DIR} ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_CURRENT_SOURCE_DIR}/../whereami ${CMAKE_CURRENT_SOURCE_DIR}/../jsoncons/include)
