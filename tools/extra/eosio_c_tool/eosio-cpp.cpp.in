@@ -65,5 +65,19 @@ int main(int argc, const char **argv) {
         return -1;
      }
   }
+  if (opts.abigen) {
+     ipstream gen_stream;
+     try {
+        std::string genstr = std::string(WhereAmI()+"/eosio-abigen ")+opts.abigen_input+std::string(" -output=")+opts.output_fn.substr(0, opts.output_fn.rfind(".wasm"))+std::string(".abi -- -Wno-unused-command-line-argument ")+opts.abigen_s;
+        child cabigen(genstr.c_str(), std_out > gen_stream);
+        line = "";
+        while (gen_stream && std::getline(gen_stream, line) && !line.empty())
+           std::cout << line << std::endl;
+        cabigen.wait();
+     } catch ( boost::process::process_error& e ) {
+        std::cout << e.what() << std::endl;
+     }
+  }
+
   return 0;
 }

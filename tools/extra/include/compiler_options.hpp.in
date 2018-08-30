@@ -71,6 +71,10 @@ static cl::list<std::string> input_filename_opt(
 
 #ifndef ONLY_LD
 /// begin c/c++ options
+static cl::opt<bool> abigen_opt(
+    "abigen",
+    cl::desc("Generate ABI"),
+    cl::cat(EosioCompilerToolCategory));
 static cl::opt<bool> CC_opt(
     "CC",
     cl::desc("Include comments from within macros in preprocessed output"),
@@ -231,8 +235,11 @@ static cl::opt<bool> fcoroutine_ts_opt(
 struct Options {
    std::string compiler;
    std::string linker;
+   std::string abigen_s;
    std::string output_fn;
+   std::string abigen_input;
    bool link;
+   bool abigen;
    std::string eosio_pp_dir;
 };
 
@@ -281,12 +288,20 @@ static std::string GetLdDefaults() {
 static Options CreateOptions(bool add_defaults=true) {
    std::stringstream comp_ss;
    std::stringstream link_ss;
+   std::stringstream abigen_ss;
    std::string output_fn;
+   std::stringstream abigen_input;
    bool link = true;
    std::string pp_dir;
+#ifdef ONLY_LD
+   bool abigen = false;
+#else
+   bool abigen = abigen_opt;
+#endif
 
    if (add_defaults) {
       comp_ss << GetCompDefaults();
+      abigen_ss << GetCompDefaults();
 #ifdef ONLY_LD
       link_ss << GetLdDefaults();
 #endif
@@ -299,6 +314,7 @@ static Options CreateOptions(bool add_defaults=true) {
 
    if (!fno_cfl_aa_opt) {
       comp_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
+      abigen_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
 #ifdef ONLY_LD
       link_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
 #else
@@ -310,18 +326,22 @@ static Options CreateOptions(bool add_defaults=true) {
       link_ss << input_filename << " ";
 #else
       comp_ss << input_filename << " ";
+      abigen_input << input_filename << " ";
 #endif
    }
-
+   
+   
 #ifndef ONLY_LD
    if (!sysroot_opt.empty()) {
       comp_ss << " --sysroot " << sysroot_opt << " ";
       comp_ss << " -I" << sysroot_opt << "/include/libcxx" << " -I" << sysroot_opt << "/include/libc -I" << sysroot_opt << " -I${Boost_INCLUDE_DIRS} ";
+      abigen_ss << " -I" << sysroot_opt << "/include/libcxx" << " -I" << sysroot_opt << "/include/libc -I" << sysroot_opt << " -I${Boost_INCLUDE_DIRS} ";
       link_ss << " -L" << sysroot_opt << "/lib "; 
    }
    else {
       comp_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc   -I" << WhereAmI() << "/../include -I${Boost_INCLUDE_DIRS} ";
       comp_ss << " --sysroot=" << WhereAmI() << "/../ ";
+      abigen_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc   -I" << WhereAmI() << "/../include -I${Boost_INCLUDE_DIRS} ";
       link_ss << " -L" << WhereAmI() << "/../lib ";
    }
 
@@ -441,20 +461,30 @@ static Options CreateOptions(bool add_defaults=true) {
 
 #ifndef ONLY_LD
 #ifdef CPP_COMP
-   if (! std_opt.empty())
+   if (! std_opt.empty()) {
       comp_ss << " --std=" << std_opt << " ";
-   if (faligned_allocation_opt)  
+      abigen_ss << " --std=" << std_opt << " ";
+   }
+   if (faligned_allocation_opt) { 
       comp_ss << " -faligned-allocation ";
-   if (fcoroutine_ts_opt)  
+      abigen_ss << " -faligned-allocation ";
+   }
+   if (fcoroutine_ts_opt) { 
       comp_ss << " -fcoroutine-ts ";
-   if (fno_elide_constructors_opt)
+      abigen_ss << " -fcoroutine-ts ";
+   }
+   if (fno_elide_constructors_opt) {
       comp_ss << " -fno-elide-constructors ";
-   if (fstrict_vtable_pointers_opt)
+      abigen_ss << " -fno-elide-constructors ";
+   }
+   if (fstrict_vtable_pointers_opt) {
       comp_ss << " -fstrict-vtable-pointers ";
+      abigen_ss << " -fstrict-vtable-pointers ";
+   }
 #endif
 #else
    link_ss << " -lc++ -lc -leosio ";
 #endif
 
-   return {comp_ss.str(), link_ss.str(), output_fn, link, pp_dir};
+   return {comp_ss.str(), link_ss.str(), abigen_ss.str(), output_fn, abigen_input.str(), link, abigen, pp_dir};
 }

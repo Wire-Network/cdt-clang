@@ -242,9 +242,7 @@ void add_struct( const clang::CXXMethodDecl* decl, abi& abi ) {
 }
 
 std::string to_index_type( std::string t ) {
-   if ( t == "uint64" || t == "int64" )
-      return "i64";
-   return "i128";
+   return "i64";
 }
 
 void add_table( const clang::CXXRecordDecl* decl, abi& abi ) {
@@ -382,6 +380,8 @@ ojson abi_to_json( const abi& abi ) {
    for ( auto t : abi.tables ) {
       o["tables"].push_back(table_to_json( t, abi ));
    }
+   o["ricardian_clauses"]  = ojson::array();
+   o["abi_extensions"]     = ojson::array();
    return o;
 }
 
@@ -442,26 +442,40 @@ int main(int argc, const char **argv) {
     cl::desc("Set the output filename and fullpath"),
     cl::Required,
     cl::cat(cat));
+   cl::opt<bool> def(
+    "default",
+    cl::desc("<ignored>"),
+    cl::Hidden,
+    cl::cat(cat));
 
    std::vector<std::string> options;
-   for (size_t i=0; i < argc; i++)
+   for (size_t i=0; i < argc; i++) {
       options.push_back(argv[i]);
-
-   options.push_back("-extra-arg=--target=wasm32");
-   options.push_back("-extra-arg=-nostdlib");
-   options.push_back("-extra-arg=-ffreestanding");
-   options.push_back("-extra-arg=-fno-builtin");
-   options.push_back("-extra-arg=-fno-rtti");
-   options.push_back("-extra-arg=-fno-exceptions");
-   options.push_back("-extra-arg=-I${Boost_INCLUDE_DIRS}");
-   options.push_back("-extra-arg=-Wno-everything");
-   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../include/libcxx");
-   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../include/libc");
-   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../include");
-   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../../../../../libraries/libc++/libcxx/include");
-   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../../../../../libraries/libc/musl/include");
-   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../../../../../libraries");
-   options.push_back(std::string("-extra-arg=-I")+WhereAmI()+"/../../../../../libraries/boost/include");
+   }
+   bool has_dash_dash = false;
+   for (auto opt : options) {
+      if ( opt.compare("--") == 0 ) {
+         has_dash_dash = true;
+         break;
+      }
+   }
+   if (!has_dash_dash)
+      options.push_back("--");
+   options.push_back("--target=wasm32");
+   options.push_back("-nostdlib");
+   options.push_back("-ffreestanding");
+   options.push_back("-fno-builtin");
+   options.push_back("-fno-rtti");
+   options.push_back("-fno-exceptions");
+   options.push_back("-I${Boost_INCLUDE_DIRS}");
+   options.push_back("-Wno-everything");
+   options.push_back(std::string("-I")+WhereAmI()+"/../include/libcxx");
+   options.push_back(std::string("-I")+WhereAmI()+"/../include/libc");
+   options.push_back(std::string("-I")+WhereAmI()+"/../include");
+   options.push_back(std::string("-I")+WhereAmI()+"/../../../../../libraries/libc++/libcxx/include");
+   options.push_back(std::string("-I")+WhereAmI()+"/../../../../../libraries/libc/musl/include");
+   options.push_back(std::string("-I")+WhereAmI()+"/../../../../../libraries");
+   options.push_back(std::string("-I")+WhereAmI()+"/../../../../../libraries/boost/include");
 
    int size = options.size();
    const char** new_argv = new const char*[size];
