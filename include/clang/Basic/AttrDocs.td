@@ -200,6 +200,7 @@ that appears to be capable of returning to its caller.
   }];
 }
 
+
 def CXX11NoReturnDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
@@ -854,7 +855,14 @@ Sample usage:
 def EosioActionDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-The ``eosio-action`` attribute marks a method as being an eosio action.
+The ``eosio::action`` attribute marks a method as being an eosio action.
+  }];
+}
+
+def EosioTableDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``eosio::table`` attribute marks a record as being an eosio table.
   }];
 }
 

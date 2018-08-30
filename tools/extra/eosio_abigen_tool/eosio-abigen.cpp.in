@@ -1,0 +1,501 @@
+// Declares clang::SyntaxOnlyAction.
+#include "clang/Frontend/FrontendActions.h"
+#include "clang/Tooling/CommonOptionsParser.h"
+#include "clang/Tooling/Tooling.h"
+#include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/AST/DeclCXX.h"
+#include "clang/AST/Expr.h"
+#include "clang/Basic/Builtins.h"
+#include <boost/process.hpp>
+#include <boost/filesystem.hpp>
+
+#include <exception>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <memory>
+#include <set>
+#include <map>
+#include <chrono>
+#include <ctime>
+
+#include "abi.hpp"
+#include <whereami.h>
+#include <jsoncons/json.hpp>
+
+// Declares llvm::cl::extrahelp.
+#include "llvm/Support/CommandLine.h"
+using namespace boost::process;
+using namespace clang::tooling;
+using namespace clang::ast_matchers;
+using namespace llvm;
+using jsoncons::json;
+using jsoncons::ojson;
+
+static std::string WhereAmI() {
+   static bool cached = false;
+   static std::vector<char> ret;
+   if (cached)
+      return {ret.data()};
+
+   int dirname_len = 0;
+   auto len = wai_getExecutablePath(NULL, 0, &dirname_len);
+   if (len <= 0)
+      return "";
+   ret.resize(len+1);
+   wai_getExecutablePath(ret.data(), len, &dirname_len);
+   ret[dirname_len] = '\0';
+   cached = true;
+   return {ret.data()};
+}
+
+struct abigen_exception : public std::exception {
+   virtual const char* what() const throw() {
+      return "eosio.abigen fatal error";
+   }
+} abigen_ex;
+
+DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_abis");
+DeclarationMatcher record_decl_matcher = cxxRecordDecl().bind("eosio_abis");
+TypeMatcher typedef_decl_matcher = type().bind("eosio_abis");
+
+abi _abi;
+
+std::string translate_type( const clang::QualType& t ) {
+   std::map<std::string, std::string> translation_table =
+   {
+      {"unsigned __int128", "uint128"},
+      {"__int128", "int128"},
+      {"uint128_t", "uint128"},
+      {"int128_t", "int128"},
+
+      {"unsigned long long", "uint64"},
+      {"long long", "int64"},
+      {"uint64_t", "uint64"},
+      {"int64_t", "int64"},
+
+      {"unsigned long", "uint32"},
+      {"long", "int32"},
+      {"unsigned int", "uint32"},
+      {"int", "int32"},
+      {"uint32_t", "uint32"},
+      {"int32_t", "int32"},
+
+      {"unsigned short", "uint16"},
+      {"short", "int16"},
+      {"uint16_t", "uint16"},
+      {"int16_t", "int16"},
+
+      {"unsigned char", "uint8"},
+      {"char", "int8"},
+      {"uint8_t", "uint8"},
+      {"int8_t", "int8"},
+
+      {"float",  "float32"},
+      {"double", "float64"},
+      {"long double", "float128"},
+      
+      {"account_name", "name"},
+      {"permission_name", "name"},
+      {"table_name", "name"},
+      {"scope_name", "name"},
+      {"action_name", "name"}
+   }; 
+   
+   auto ret = translation_table[t.getAsString()];
+   if (ret == "")
+      return t.getAsString();
+   return ret;
+}
+
+bool is_name_type( const std::string& t ) {
+   static const std::set<std::string> name_types = { "name", 
+                                                     "account_name",
+                                                     "permission_name",
+                                                     "table_name",
+                                                     "scope_name",
+                                                     "action_name" };
+   return name_types.count(t) >= 1;
+}
+
+bool is_builtin_type( const std::string& t ) {
+   static const std::set<std::string> builtins =
+   {
+      "bool",
+      "int8",
+      "uint8",
+      "int16",
+      "uint16",
+      "int32",
+      "uint32",
+      "int64",
+      "uint64",
+      "int128",
+      "uint128",
+      "varint32",
+      "varuint32",
+      "float32",
+      "float64",
+      "float128",
+      "time_point",
+      "time_point_sec",
+      "block_timestamp_type",
+      "name",
+      "bytes",
+      "string",
+      "checksum160",
+      "checksum256",
+      "checksum512",
+      "public_key",
+      "signature",
+      "symbol",
+      "symbol_code",
+      "asset",
+      "extended_asset"
+   };
+   return builtins.count(t) >= 1;
+}
+
+bool is_cxx_record( const clang::QualType& t ) {
+   return t.getTypePtr()->isRecordType();
+}
+
+std::string get_base_type_name( const clang::QualType& type ) {
+   std::string type_str = type.getAsString();
+   int i = type_str.length()-1;
+   for (; i > 0; i--)
+      if (type_str[i] == ':' || type_str[i] == ' ')
+         return type_str.substr(i+1); 
+   return type_str;
+}
+
+std::string get_type( const clang::QualType& t ) {
+   std::string type = translate_type( t );
+   if ( !is_builtin_type( type ) && !is_name_type( type ) )
+      type = get_base_type_name( t );
+   return type;
+}
+
+std::string get_type_alias( const clang::QualType& t ) {
+   if (is_name_type(get_base_type_name(t)))
+      return "name";
+   return get_type(clang::QualType(t).getCanonicalType());
+}
+
+bool is_aliasing( const clang::QualType& t ) {
+   if (is_name_type(get_base_type_name(t)))
+      return true;
+   return get_base_type_name(t).compare(get_type_alias(t)) != 0;
+}
+
+void add_typedef( const clang::QualType& t, abi& abi ) {
+   abi_typedef ret;
+   ret.new_type_name = get_base_type_name( t );
+   ret.type = get_type_alias( t );
+   abi.typedefs.insert(ret);
+}
+
+void add_action( const clang::CXXRecordDecl* decl, abi& abi ) {
+   abi_action ret;
+   ret.name = decl->getName().str();
+   ret.type = decl->getName().str();
+   abi.actions.insert(ret);
+}
+void add_action( const clang::CXXMethodDecl* decl, abi& abi ) {
+   abi_action ret;
+   ret.name = decl->getNameAsString();
+   ret.type = decl->getNameAsString();
+   abi.actions.insert(ret);
+}
+
+void add_struct( const clang::CXXRecordDecl* decl, abi& abi ) {
+   abi_struct ret;
+   if ( decl->getNumBases() > 1 ) {
+      std::cerr << "Error: abigen can only handle single inheritance <class " << decl->getName().str() << ">\n";
+      throw abigen_ex;
+   }
+   else if ( decl->getNumBases() == 1 )
+      ret.base = get_type(decl->bases_begin()->getType());
+
+   for ( auto field : decl->fields() ) {
+      ret.fields.push_back({field->getName().str(), get_type(field->getType())});
+   }
+
+   ret.name = decl->getName().str();
+   abi.structs.insert(ret);
+}
+
+void add_struct( const clang::CXXMethodDecl* decl, abi& abi ) {
+   abi_struct new_struct;
+   new_struct.name = decl->getNameAsString();
+   for (auto param : decl->parameters() ) {
+      auto param_type = param->getType();
+      if (is_aliasing(param_type))
+         add_typedef(param_type, abi);
+      if (param_type.getTypePtr()->isRecordType()) {
+         add_struct( param_type.getTypePtr()->getAsCXXRecordDecl(), abi );
+      }
+      new_struct.fields.push_back({param->getNameAsString(), get_type(param_type)});
+   }
+   abi.structs.insert(new_struct);
+}
+
+std::string to_index_type( std::string t ) {
+   return "i64";
+}
+
+void add_table( const clang::CXXRecordDecl* decl, abi& abi ) {
+   abi_table t;
+   t.type = decl->getNameAsString();
+   // get the primary_key name
+   for ( auto method : decl->methods() ) {
+      //method->dump();
+      if ( method->getName() == "primary_key" ) 
+         if ( auto cs = dyn_cast<clang::CompoundStmt>(method->getBody()) )
+            if ( auto ret = dyn_cast<clang::ReturnStmt>(cs->body_front()) ) {
+               if ( auto me = dyn_cast<clang::MemberExpr>(ret->getRetValue()->IgnoreImpCasts()) ) {
+                  auto name = me->getMemberNameInfo().getName().getAsString();
+                  t.key_names.push_back(name);
+                  for ( auto field : decl->fields() ) {
+                     if ( field->getName().str() == name ) {
+                        auto type = get_type( field->getType() );
+                        t.key_types.push_back(type);
+                        t.index_type = to_index_type(type);
+                     }
+                  }
+                  abi.tables.insert(t);
+               }
+            }
+   }
+}
+
+void add_possible_table( const clang::TemplateSpecializationType* type, abi& abi ) {
+   abi_table t;
+   if ( type->getNumArgs() >= 2 ) {
+      if ( clang::CallExpr* first = dyn_cast<clang::CallExpr>(type->getArg(0).getAsExpr()) ) {
+         if ( first->getNumArgs() == 1 ) {
+            if ( clang::StringLiteral* n = dyn_cast<clang::StringLiteral>(first->getArg(0)->IgnoreImpCasts()) ) {
+               clang::QualType second = type->getArg(1).getAsType();
+               t.name = n->getString().str();
+               t.type = get_type(second);
+               abi.ptables.emplace(t.type, t);
+               int past_primary = 0;
+               for ( auto& arg : type->template_arguments() ) {
+                  if ( past_primary < 2 ) {
+                     past_primary++;
+                     continue;
+                  }
+                  auto tst = dyn_cast<clang::TemplateSpecializationType>(arg.getAsType());
+                  if ( tst->getNumArgs() >= 2 ) {
+                     if ( auto first = dyn_cast<clang::CallExpr>(tst->getArg(0).getAsExpr()->IgnoreImpCasts()) ) {
+                        if ( clang::StringLiteral* n = dyn_cast<clang::StringLiteral>(first->getArg(0)->IgnoreImpCasts()) ) {
+                           auto second = dyn_cast<clang::TemplateSpecializationType>(tst->getArg(1).getAsType());
+                           abi.ptables[t.type].key_types.push_back(get_type(second->getArg(1).getAsType()));
+                           abi.ptables[t.type].key_names.push_back(n->getString().str());
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
+}
+
+std::string generate_json_comment() {
+   std::stringstream ss;
+   ss << "This file was generated with eosio-abigen.";
+   ss << " DO NOT EDIT ";
+   auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+   ss << std::ctime(&t);
+   auto output = ss.str();
+   return output.substr(0, output.length()-1); // remove the newline character
+}
+
+ojson struct_to_json( const abi_struct& s ) {
+   ojson o;
+   o["name"] = s.name;
+   o["base"] = s.base;
+   o["fields"] = ojson::array();
+   for ( auto field : s.fields ) {
+      ojson f;
+      f["name"] = field.name;
+      f["type"] = field.type;
+      o["fields"].push_back(f);
+   }
+   return o;
+}
+
+ojson typedef_to_json( const abi_typedef& t ) {
+   ojson o;
+   o["new_type_name"] = t.new_type_name;
+   o["type"]          = t.type;
+   return o;
+}
+
+ojson action_to_json( const abi_action& a ) {
+   ojson o;
+   o["name"] = a.name;
+   o["type"] = a.type;
+   o["ricardian_contract"] = a.ricardian_contract;
+   return o;
+}
+
+
+
+ojson table_to_json( const abi_table& t, const abi& abi ) {
+   ojson o;
+   o["name"] = abi.ptables.at(t.type).name;
+   o["type"] = t.type;
+   o["index_type"] = t.index_type;
+   o["key_names"] = ojson::array();
+   o["key_types"] = ojson::array();
+   o["key_names"].push_back(t.key_names[0]);
+   o["key_types"].push_back(t.key_types[0]);
+   for ( auto name : abi.ptables.at(t.type).key_names ) 
+      o["key_names"].push_back(name);
+   for ( auto type : abi.ptables.at(t.type).key_types ) 
+      o["key_types"].push_back(type);
+   return o;
+}
+
+ojson abi_to_json( const abi& abi ) {
+   ojson o;
+   o["____comment"] = generate_json_comment();
+   o["version"]     = abi.version;
+   o["structs"]     = ojson::array();
+   for ( auto s : abi.structs ) {
+      o["structs"].push_back(struct_to_json(s));
+   }
+   o["types"]       = ojson::array();
+   for ( auto t : abi.typedefs ) {
+      o["types"].push_back(typedef_to_json( t ));
+   }
+   o["actions"]     = ojson::array();
+   for ( auto a : abi.actions ) {
+      o["actions"].push_back(action_to_json( a ));
+   }
+   o["tables"]     = ojson::array();
+   for ( auto t : abi.tables ) {
+      o["tables"].push_back(table_to_json( t, abi ));
+   }
+   o["ricardian_clauses"]  = ojson::array();
+   o["abi_extensions"]     = ojson::array();
+   return o;
+}
+
+abi& get_abi_ref() {
+   static std::unique_ptr<abi> _abi = make_unique<abi>();
+   return *_abi;
+}
+
+class EosioMethodMatcher : public MatchFinder::MatchCallback {
+   public:
+      virtual void run( const MatchFinder::MatchResult& res ) {
+         if (const clang::CXXMethodDecl* decl = res.Nodes.getNodeAs<clang::CXXMethodDecl>("eosio_abis")->getCanonicalDecl()) {
+            abi abi;
+            if (decl->isEosioAction()) {
+               add_struct(decl, get_abi_ref());
+               add_action(decl, get_abi_ref());
+               auto params = decl->parameters();
+               for (auto param : params) {
+                  abi_struct abis;
+                  if (param->getType().getTypePtr()->isRecordType()) {
+                     add_struct(param->getType().getTypePtr()->getAsCXXRecordDecl(), get_abi_ref());
+                  }
+               }
+            }
+         }
+      }
+
+};
+
+class EosioRecordMatcher : public MatchFinder::MatchCallback {
+   public:
+      virtual void run( const MatchFinder::MatchResult& res ) {
+         if (const clang::TemplateSpecializationType* type = res.Nodes.getNodeAs<clang::TemplateSpecializationType>("eosio_abis")) {
+            add_possible_table( type, get_abi_ref() );
+         }
+         if (const clang::CXXRecordDecl* decl = res.Nodes.getNodeAs<clang::CXXRecordDecl>("eosio_abis")) {
+            if (decl->isEosioAction()) {
+               add_struct(decl, get_abi_ref());
+               add_action(decl, get_abi_ref());
+            }
+            if (decl->isEosioTable()) {
+               add_struct(decl, get_abi_ref());
+               add_table( decl, get_abi_ref());
+            }
+         }
+      }
+};
+
+int main(int argc, const char **argv) {
+
+   cl::SetVersionPrinter([](llvm::raw_ostream& os) {
+        os << "eosio-abigen version " << ${EOSIO_VER_MAJOR} << "." << ${EOSIO_VER_MINOR} << "." << ${EOSIO_VER_REVISION} << "\n";
+  });
+   cl::OptionCategory cat("eosio-abigen", "generates an abi from C++ project input");
+
+   cl::opt<std::string> abidir(
+    "output",
+    cl::desc("Set the output filename and fullpath"),
+    cl::Required,
+    cl::cat(cat));
+   cl::opt<bool> def(
+    "default",
+    cl::desc("<ignored>"),
+    cl::Hidden,
+    cl::cat(cat));
+
+   std::vector<std::string> options;
+   for (size_t i=0; i < argc; i++) {
+      options.push_back(argv[i]);
+   }
+   bool has_dash_dash = false;
+   for (auto opt : options) {
+      if ( opt.compare("--") == 0 ) {
+         has_dash_dash = true;
+         break;
+      }
+   }
+   if (!has_dash_dash)
+      options.push_back("--");
+   options.push_back("--target=wasm32");
+   options.push_back("-nostdlib");
+   options.push_back("-ffreestanding");
+   options.push_back("-fno-builtin");
+   options.push_back("-fno-rtti");
+   options.push_back("-fno-exceptions");
+   options.push_back("-I${Boost_INCLUDE_DIRS}");
+   options.push_back("-Wno-everything");
+   options.push_back(std::string("-I")+WhereAmI()+"/../include/libcxx");
+   options.push_back(std::string("-I")+WhereAmI()+"/../include/libc");
+   options.push_back(std::string("-I")+WhereAmI()+"/../include");
+   options.push_back(std::string("-I")+WhereAmI()+"/../../../../../libraries/libc++/libcxx/include");
+   options.push_back(std::string("-I")+WhereAmI()+"/../../../../../libraries/libc/musl/include");
+   options.push_back(std::string("-I")+WhereAmI()+"/../../../../../libraries");
+   options.push_back(std::string("-I")+WhereAmI()+"/../../../../../libraries/boost/include");
+
+   int size = options.size();
+   const char** new_argv = new const char*[size];
+   for (size_t i=0; i < size; i++)
+      new_argv[i] = options[i].c_str();
+
+   CommonOptionsParser opts( size, new_argv, cat, 0 );
+
+   ClangTool tool( opts.getCompilations(), opts.getSourcePathList());
+   EosioMethodMatcher eosio_method_matcher;
+   EosioRecordMatcher eosio_record_matcher;
+   MatchFinder finder;
+   finder.addMatcher(function_decl_matcher, &eosio_method_matcher);
+   finder.addMatcher(record_decl_matcher, &eosio_record_matcher);
+   finder.addMatcher(typedef_decl_matcher, &eosio_record_matcher);
+   auto tool_run = tool.run(newFrontendActionFactory(&finder).get());
+
+   std::ofstream output(abidir);
+   output << pretty_print(abi_to_json(get_abi_ref()));
+   output.close();
+
+   return tool_run;
+}

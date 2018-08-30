@@ -52,6 +52,7 @@
 #include <iterator>
 #include <memory>
 #include <vector>
+#include <iostream>
 
 namespace clang {
 
@@ -724,6 +725,9 @@ public:
 
   /// Iterator that traverses the base classes of a class.
   using base_class_const_iterator = const CXXBaseSpecifier *;
+  bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
+  bool isEosioTable() const { return hasAttr<EosioTableAttr>(); }
+
 
   CXXRecordDecl *getCanonicalDecl() override {
     return cast<CXXRecordDecl>(RecordDecl::getCanonicalDecl());
@@ -1561,7 +1565,7 @@ public:
             hasConstexprNonCopyMoveConstructor() ||
             hasTrivialDefaultConstructor());
   }
-
+  
   /// If this record is an instantiation of a member class,
   /// retrieves the member class from which it was instantiated.
   ///
@@ -2057,7 +2061,7 @@ public:
 
   bool isStatic() const;
   bool isInstance() const { return !isStatic(); }
-
+  bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
   /// Returns true if the given operator is implicitly static in a record
   /// context.
   static bool isStaticOverloadedOperator(OverloadedOperatorKind OOK) {
