@@ -75,6 +75,23 @@ static cl::opt<bool> abigen_opt(
     "abigen",
     cl::desc("Generate ABI"),
     cl::cat(EosioCompilerToolCategory));
+// ignore for now
+static cl::opt<bool> g_opt(
+      "g",
+      cl::desc("debug build <ignored>"),
+      cl::Hidden,
+      cl::cat(EosioCompilerToolCategory));
+static cl::opt<std::string> x_opt(
+      "x",
+      cl::desc("<ignored>"),
+      cl::Hidden,
+      cl::Prefix,
+      cl::cat(EosioCompilerToolCategory));
+static cl::opt<bool> pch_opt(
+      "fpch-preprocess",
+      cl::desc("<ignored>"),
+      cl::Hidden,
+      cl::cat(EosioCompilerToolCategory));
 static cl::opt<bool> CC_opt(
     "CC",
     cl::desc("Include comments from within macros in preprocessed output"),
@@ -86,6 +103,10 @@ static cl::opt<bool> C_opt(
 static cl::opt<bool> c_opt(
     "c",
     cl::desc("Only run preprocess, compile, and assemble steps"),
+    cl::cat(EosioCompilerToolCategory));
+static cl::opt<bool> color_diag_opt(
+    "fcolor-diagnostics",
+    cl::desc("Use colors in diagnostics"),
     cl::cat(EosioCompilerToolCategory));
 static cl::opt<bool> dD_opt(
     "dD",
@@ -268,7 +289,7 @@ static std::string GetCompDefaults() {
    else if (boost::filesystem::exists(WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff))
       apply_lib = WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff;
    
-   std::string ret = " --target=wasm32 -nostdlib -ffreestanding -fno-builtin "
+   std::string ret = " --target=wasm32 -nostdlib -ffreestanding -fno-builtin -fno-threadsafe-statics "
 #ifdef CPP_COMP
           " -fno-rtti -fno-exceptions "
 #endif
@@ -342,7 +363,7 @@ static Options CreateOptions(bool add_defaults=true) {
       comp_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc   -I" << WhereAmI() << "/../include -I${Boost_INCLUDE_DIRS} ";
       comp_ss << " --sysroot=" << WhereAmI() << "/../ ";
       abigen_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc   -I" << WhereAmI() << "/../include -I${Boost_INCLUDE_DIRS} ";
-      link_ss << " -L" << WhereAmI() << "/../lib ";
+      link_ss << " -L" << WhereAmI() << "/../lib -L" << WhereAmI() << "/../lib64 ";
    }
 
    if (!isystem_opt.empty()) {
@@ -370,6 +391,8 @@ static Options CreateOptions(bool add_defaults=true) {
       comp_ss << " -emit-llvm ";
    if (E_opt)
       comp_ss << " -E ";
+   if (color_diag_opt)
+      comp_ss << "-fcolor-diagnostics ";
    if (finline_functions_opt)
       comp_ss << " -finline-functions ";
    if (finline_hint_functions_opt)
