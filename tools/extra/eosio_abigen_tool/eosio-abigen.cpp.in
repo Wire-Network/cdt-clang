@@ -41,7 +41,7 @@ static std::string WhereAmI() {
 
    int dirname_len = 0;
    auto len = wai_getExecutablePath(NULL, 0, &dirname_len);
-   if (len <= 0)
+   if (len <= 0) 
       return "";
    ret.resize(len+1);
    wai_getExecutablePath(ret.data(), len, &dirname_len);
@@ -55,6 +55,59 @@ struct abigen_exception : public std::exception {
       return "eosio.abigen fatal error";
    }
 } abigen_ex;
+
+uint64_t char_to_symbol( char c ) {
+   if( c >= 'a' && c <= 'z' )
+      return (c - 'a') + 6;
+   if( c >= '1' && c <= '5' )
+      return (c - '1') + 1;
+   return 0;
+}
+
+uint64_t string_to_name( const char* str )
+{
+   uint64_t name = 0;
+   int i = 0;
+   for ( ; str[i] && i < 12; ++i) {
+       // NOTE: char_to_symbol() returns char type, and without this explicit
+       // expansion to uint64 type, the compilation fails at the point of usage
+       // of string_to_name(), where the usage requires constant (compile time) expression.
+        name |= (char_to_symbol(str[i]) & 0x1f) << (64 - 5 * (i + 1));
+    }
+
+   // The for-loop encoded up to 60 high bits into uint64 'name' variable,
+   // if (strlen(str) > 12) then encode str[12] into the low (remaining)
+   // 4 bits of 'name'
+   if (i == 12)
+       name |= char_to_symbol(str[12]) & 0x0F;
+   return name;
+}
+
+void validate_name( const std::string& str ) {
+   const auto len = str.length();
+   if ( len > 13 ) { 
+      std::cout << "Error, name {" << str << "} is more than 13 characters long\n";
+      throw abigen_ex;
+   }
+   uint64_t value = string_to_name( str.c_str() );
+
+   static const char* charmap = ".12345abcdefghijklmnopqrstuvwxyz";
+   std::string str2(13,'.');
+
+   uint64_t tmp = value;
+   for( uint32_t i = 0; i <= 12; ++i ) {
+      char c = charmap[tmp & (i == 0 ? 0x0f : 0x1f)];
+      str2[12-i] = c;
+      tmp >>= (i == 0 ? 4 : 5);
+   }
+
+   boost::algorithm::trim_right_if( str2, []( char c ){ return c == '.'; } );
+
+   if ( str2 != str ) {
+      std::cout << "Error, name not properly normalized\n";
+      throw abigen_ex;
+   }
+}
 
 DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_abis");
 DeclarationMatcher record_decl_matcher = cxxRecordDecl().bind("eosio_abis");
@@ -198,13 +251,49 @@ void add_typedef( const clang::QualType& t, abi& abi ) {
 
 void add_action( const clang::CXXRecordDecl* decl, abi& abi ) {
    abi_action ret;
-   ret.name = decl->getName().str();
+   auto action_name = decl->getEosioActionAttr()->getName();
+
+   if (action_name.empty()) {
+      try {
+         validate_name( decl->getName().str() );
+      } catch (...) {
+         std::cout << "Error, name <" <<decl->getName().str() << "> is an invalid EOSIO name.\n";
+         throw;
+      }
+      ret.name = decl->getName().str();
+   }
+   else {
+      try {
+         validate_name( action_name.str() );
+      } catch (...) {
+         std::cout << "Error, name <" << action_name.str() << "> is an invalid EOSIO name.\n";
+         throw;
+      }
+      ret.name = action_name.str();
+   }
    ret.type = decl->getName().str();
    abi.actions.insert(ret);
 }
 void add_action( const clang::CXXMethodDecl* decl, abi& abi ) {
    abi_action ret;
-   ret.name = decl->getNameAsString();
+
+   auto action_name = decl->getEosioActionAttr()->getName();
+   if (action_name.empty()) {
+      try {
+         validate_name( decl->getNameAsString() );
+      } catch (...) {
+         std::cout << "Error, name <" <<decl->getNameAsString() << "> is an invalid EOSIO name.\n";
+      }
+      ret.name = decl->getNameAsString();
+   }
+   else {
+      try {
+         validate_name( action_name.str() );
+      } catch (...) {
+         std::cout << "Error, name <" << action_name.str() << "> is an invalid EOSIO name.\n";
+      }
+      ret.name = action_name.str();
+   }
    ret.type = decl->getNameAsString();
    abi.actions.insert(ret);
 }
@@ -247,6 +336,16 @@ std::string to_index_type( std::string t ) {
 
 void add_table( const clang::CXXRecordDecl* decl, abi& abi ) {
    abi_table t;
+
+   auto table_name = decl->getEosioTableAttr()->getName();
+   if (!table_name.empty()) {
+      try {
+         validate_name( table_name.str() );
+      } catch (...) {
+         std::cout << "Error, name <" << table_name.str() << "> is an invalid EOSIO name.\n";
+      }
+      t.name = table_name.str();
+   }
    t.type = decl->getNameAsString();
    // get the primary_key name
    for ( auto method : decl->methods() ) {
@@ -491,11 +590,17 @@ int main(int argc, const char **argv) {
    finder.addMatcher(function_decl_matcher, &eosio_method_matcher);
    finder.addMatcher(record_decl_matcher, &eosio_record_matcher);
    finder.addMatcher(typedef_decl_matcher, &eosio_record_matcher);
-   auto tool_run = tool.run(newFrontendActionFactory(&finder).get());
+   int tool_run = -1;
+   try {
+      tool_run = tool.run(newFrontendActionFactory(&finder).get());
 
-   std::ofstream output(abidir);
-   output << pretty_print(abi_to_json(get_abi_ref()));
-   output.close();
+      std::ofstream output(abidir);
+      output << pretty_print(abi_to_json(get_abi_ref()));
+      output.close();
+   } catch (std::exception& ex) {
+      std::cout << ex.what() << "\n";
+      tool_run = -1;
+   } 
 
    return tool_run;
 }

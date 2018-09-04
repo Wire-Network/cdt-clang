@@ -931,12 +931,14 @@ def C11NoReturn : InheritableAttr {
 
 def EosioAction : InheritableAttr {
    let Spellings = [CXX11<"eosio", "action">, GNU<"eosio_action">];
+   let Args = [StringArgument<"name", 1>];
    let Subjects = SubjectList<[CXXRecord, CXXMethod]>;
    let Documentation = [EosioActionDocs];
 }
 
 def EosioTable : InheritableAttr {
    let Spellings = [CXX11<"eosio", "table">, GNU<"eosio_table">];
+   let Args = [StringArgument<"name", 1>];
    let Subjects = SubjectList<[CXXRecord]>;
    let Documentation = [EosioTableDocs];
 }
