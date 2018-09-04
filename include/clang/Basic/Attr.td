@@ -940,6 +940,7 @@ def EosioTable : InheritableAttr {
    let Spellings = [CXX11<"eosio", "table">, GNU<"eosio_table">];
    let Args = [StringArgument<"name", 1>];
    let Subjects = SubjectList<[CXXRecord]>;
+   let MeaningfulToClassTemplateDefinition = 1;
    let Documentation = [EosioTableDocs];
 }
 

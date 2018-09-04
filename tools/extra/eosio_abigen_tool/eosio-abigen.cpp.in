@@ -347,9 +347,14 @@ void add_table( const clang::CXXRecordDecl* decl, abi& abi ) {
       t.name = table_name.str();
    }
    t.type = decl->getNameAsString();
+   if (abi.ptables.find(t.type) == abi.ptables.end())
+      abi.ptables.emplace(t.type, std::set<abi_table>{t});
+   else
+      abi.ptables.at(t.type).insert(t);
+   abi.tables.insert(t);
+   /*
    // get the primary_key name
    for ( auto method : decl->methods() ) {
-      //method->dump();
       if ( method->getName() == "primary_key" ) 
          if ( auto cs = dyn_cast<clang::CompoundStmt>(method->getBody()) )
             if ( auto ret = dyn_cast<clang::ReturnStmt>(cs->body_front()) ) {
@@ -367,9 +372,10 @@ void add_table( const clang::CXXRecordDecl* decl, abi& abi ) {
                }
             }
    }
+   */
 }
 
-void add_possible_table( const clang::TemplateSpecializationType* type, abi& abi ) {
+void add_multi_index_table( const clang::TemplateSpecializationType* type, abi& abi ) {
    abi_table t;
    if ( type->getNumArgs() >= 2 ) {
       if ( clang::CallExpr* first = dyn_cast<clang::CallExpr>(type->getArg(0).getAsExpr()) ) {
@@ -378,13 +384,17 @@ void add_possible_table( const clang::TemplateSpecializationType* type, abi& abi
                clang::QualType second = type->getArg(1).getAsType();
                t.name = n->getString().str();
                t.type = get_type(second);
-               abi.ptables.emplace(t.type, t);
+               if (abi.ptables.find(t.type) == abi.ptables.end())
+                  abi.ptables.emplace(t.type, std::set<abi_table>{t});
+               else
+                  abi.ptables.at(t.type).insert(t);
                int past_primary = 0;
                for ( auto& arg : type->template_arguments() ) {
                   if ( past_primary < 2 ) {
                      past_primary++;
                      continue;
                   }
+                  /*
                   auto tst = dyn_cast<clang::TemplateSpecializationType>(arg.getAsType());
                   if ( tst->getNumArgs() >= 2 ) {
                      if ( auto first = dyn_cast<clang::CallExpr>(tst->getArg(0).getAsExpr()->IgnoreImpCasts()) ) {
@@ -395,6 +405,7 @@ void add_possible_table( const clang::TemplateSpecializationType* type, abi& abi
                         }
                      }
                   }
+                  */
                }
             }
          }
@@ -443,19 +454,19 @@ ojson action_to_json( const abi_action& a ) {
 
 
 
-ojson table_to_json( const abi_table& t, const abi& abi ) {
+ojson table_to_json( const abi_table& t ) {
    ojson o;
-   o["name"] = abi.ptables.at(t.type).name;
+   o["name"] = t.name;
    o["type"] = t.type;
-   o["index_type"] = t.index_type;
+   o["index_type"] = "i64";
    o["key_names"] = ojson::array();
    o["key_types"] = ojson::array();
-   o["key_names"].push_back(t.key_names[0]);
-   o["key_types"].push_back(t.key_types[0]);
+   /*
    for ( auto name : abi.ptables.at(t.type).key_names ) 
       o["key_names"].push_back(name);
    for ( auto type : abi.ptables.at(t.type).key_types ) 
       o["key_types"].push_back(type);
+   */
    return o;
 }
 
@@ -477,7 +488,10 @@ ojson abi_to_json( const abi& abi ) {
    }
    o["tables"]     = ojson::array();
    for ( auto t : abi.tables ) {
-      o["tables"].push_back(table_to_json( t, abi ));
+      for ( auto _t : abi.ptables.at(t.type) ) {
+         if ( !_t.name.empty() )
+            o["tables"].push_back(table_to_json( _t));
+      }
    }
    o["ricardian_clauses"]  = ojson::array();
    o["abi_extensions"]     = ojson::array();
@@ -514,8 +528,9 @@ class EosioRecordMatcher : public MatchFinder::MatchCallback {
    public:
       virtual void run( const MatchFinder::MatchResult& res ) {
          if (const clang::TemplateSpecializationType* type = res.Nodes.getNodeAs<clang::TemplateSpecializationType>("eosio_abis")) {
-            add_possible_table( type, get_abi_ref() );
+            add_multi_index_table( type, get_abi_ref() );
          }
+
          if (const clang::CXXRecordDecl* decl = res.Nodes.getNodeAs<clang::CXXRecordDecl>("eosio_abis")) {
             if (decl->isEosioAction()) {
                add_struct(decl, get_abi_ref());
@@ -523,6 +538,7 @@ class EosioRecordMatcher : public MatchFinder::MatchCallback {
             }
             if (decl->isEosioTable()) {
                add_struct(decl, get_abi_ref());
+               auto table_name = decl->getEosioTableAttr()->getName();
                add_table( decl, get_abi_ref());
             }
          }
