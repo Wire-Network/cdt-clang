@@ -727,6 +727,8 @@ public:
   using base_class_const_iterator = const CXXBaseSpecifier *;
   bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
   bool isEosioTable() const { return hasAttr<EosioTableAttr>(); }
+  EosioActionAttr* getEosioActionAttr() const { return getAttr<EosioActionAttr>(); }
+  EosioTableAttr*  getEosioTableAttr() const { return getAttr<EosioTableAttr>(); }
 
 
   CXXRecordDecl *getCanonicalDecl() override {
@@ -2062,6 +2064,8 @@ public:
   bool isStatic() const;
   bool isInstance() const { return !isStatic(); }
   bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
+  EosioActionAttr* getEosioActionAttr() const { return getAttr<EosioActionAttr>(); }
+
   /// Returns true if the given operator is implicitly static in a record
   /// context.
   static bool isStaticOverloadedOperator(OverloadedOperatorKind OOK) {

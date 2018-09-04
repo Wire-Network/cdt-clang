@@ -386,7 +386,29 @@ bool Sema::checkStringLiteralArgumentAttr(const AttributeList &AL,
   Str = Literal->getString();
   return true;
 }
+static void handleEosioActionAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+  // Handle the cases where the attribute has a text message.
+  StringRef Str, Replacement;
+  if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
+      !S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
 
+  D->addAttr(::new (S.Context)
+                 EosioActionAttr(AL.getRange(), S.Context, Str,
+                                AL.getAttributeSpellingListIndex()));
+}
+
+static void handleEosioTableAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+  // Handle the cases where the attribute has a text message.
+  StringRef Str, Replacement;
+  if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
+      !S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+
+  D->addAttr(::new (S.Context)
+                 EosioTableAttr(AL.getRange(), S.Context, Str,
+                                AL.getAttributeSpellingListIndex()));
+}
 /// Applies the given attribute to the Decl without performing any
 /// additional semantic checking.
 template <typename AttrType>
@@ -5599,6 +5621,9 @@ static void handleRequiresCapabilityAttr(Sema &S, Decl *D,
   D->addAttr(RCA);
 }
 
+
+
+
 static void handleDeprecatedAttr(Sema &S, Decl *D, const AttributeList &AL) {
   if (const auto *NSD = dyn_cast<NamespaceDecl>(D)) {
     if (NSD->isAnonymousNamespace()) {
@@ -5820,10 +5845,10 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
         << AL.getName() << D->getLocation();
     break;
   case AttributeList::AT_EosioAction:
-    handleSimpleAttribute<EosioActionAttr>(S, D, AL);
+    handleEosioActionAttribute(S, D, AL);
     break;
   case AttributeList::AT_EosioTable:
-    handleSimpleAttribute<EosioTableAttr>(S, D, AL);
+    handleEosioTableAttribute(S, D, AL);
     break;
   case AttributeList::AT_Interrupt:
     handleInterruptAttr(S, D, AL);
