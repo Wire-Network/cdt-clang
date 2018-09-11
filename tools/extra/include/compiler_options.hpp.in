@@ -411,7 +411,7 @@ static Options CreateOptions(bool add_defaults=true) {
       comp_ss << " -fstrict-return ";
    for ( auto include : include_opt ) {
       comp_ss << " -include=" << include << " ";
-      abigen_ss < " -include=" << include << " ";
+      abigen_ss << " -include=" << include << " ";
    }
    for ( auto inc_dir : I_opt ) {
       comp_ss << " -I" << inc_dir << " ";

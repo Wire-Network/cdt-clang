@@ -115,6 +115,15 @@ TypeMatcher typedef_decl_matcher = type().bind("eosio_abis");
 
 abi _abi;
 
+std::string get_base_type_name( const clang::QualType& type ) {
+   std::string type_str = type.getAsString();
+   int i = type_str.length()-1;
+   for (; i > 0; i--)
+      if (type_str[i] == ':' || type_str[i] == ' ')
+         return type_str.substr(i+1); 
+   return type_str;
+}
+
 std::string translate_type( const clang::QualType& t ) {
    std::map<std::string, std::string> translation_table =
    {
@@ -153,10 +162,10 @@ std::string translate_type( const clang::QualType& t ) {
       {"permission_name", "name"},
       {"table_name", "name"},
       {"scope_name", "name"},
-      {"action_name", "name"}
+      {"action_name", "name"},
+      {"symbol_type", "symbol"}
    }; 
-   
-   auto ret = translation_table[t.getAsString()];
+   auto ret = translation_table[get_base_type_name(t)];
    if (ret == "")
       return t.getAsString();
    return ret;
@@ -214,14 +223,6 @@ bool is_cxx_record( const clang::QualType& t ) {
    return t.getTypePtr()->isRecordType();
 }
 
-std::string get_base_type_name( const clang::QualType& type ) {
-   std::string type_str = type.getAsString();
-   int i = type_str.length()-1;
-   for (; i > 0; i--)
-      if (type_str[i] == ':' || type_str[i] == ' ')
-         return type_str.substr(i+1); 
-   return type_str;
-}
 
 std::string get_type( const clang::QualType& t ) {
    std::string type = translate_type( t );
@@ -320,10 +321,12 @@ void add_struct( const clang::CXXMethodDecl* decl, abi& abi ) {
    new_struct.name = decl->getNameAsString();
    for (auto param : decl->parameters() ) {
       auto param_type = param->getType();
-      if (is_aliasing(param_type))
-         add_typedef(param_type, abi);
-      if (param_type.getTypePtr()->isRecordType()) {
-         add_struct( param_type.getTypePtr()->getAsCXXRecordDecl(), abi );
+      if (!is_builtin_type(get_type(param_type))) {
+         if (is_aliasing(param_type))
+            add_typedef(param_type, abi);
+         if (param_type.getTypePtr()->isRecordType()) {
+            add_struct( param_type.getTypePtr()->getAsCXXRecordDecl(), abi );
+         }
       }
       new_struct.fields.push_back({param->getNameAsString(), get_type(param_type)});
    }
@@ -337,16 +340,20 @@ std::string to_index_type( std::string t ) {
 void add_table( const clang::CXXRecordDecl* decl, abi& abi ) {
    abi_table t;
 
+   t.type = decl->getNameAsString();
    auto table_name = decl->getEosioTableAttr()->getName();
    if (!table_name.empty()) {
       try {
          validate_name( table_name.str() );
       } catch (...) {
-         std::cout << "Error, name <" << table_name.str() << "> is an invalid EOSIO name.\n";
       }
       t.name = table_name.str();
    }
-   t.type = decl->getNameAsString();
+   else {
+      t.name = std::string("eosio_ptable:::")+t.type;
+      
+   }
+
    if (abi.ptables.find(t.type) == abi.ptables.end())
       abi.ptables.emplace(t.type, std::set<abi_table>{t});
    else
@@ -489,7 +496,7 @@ ojson abi_to_json( const abi& abi ) {
    o["tables"]     = ojson::array();
    for ( auto t : abi.tables ) {
       for ( auto _t : abi.ptables.at(t.type) ) {
-         if ( !_t.name.empty() )
+         if ( !_t.name.empty() && _t.name.find("eosio_ptable:::") == std::string::npos )
             o["tables"].push_back(table_to_json( _t));
       }
    }
@@ -514,7 +521,7 @@ class EosioMethodMatcher : public MatchFinder::MatchCallback {
                auto params = decl->parameters();
                for (auto param : params) {
                   abi_struct abis;
-                  if (param->getType().getTypePtr()->isRecordType()) {
+                  if (param->getType().getTypePtr()->isRecordType() && !is_builtin_type(get_type(param->getType()))) {
                      add_struct(param->getType().getTypePtr()->getAsCXXRecordDecl(), get_abi_ref());
                   }
                }
