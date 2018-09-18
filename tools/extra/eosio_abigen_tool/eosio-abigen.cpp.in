@@ -143,7 +143,6 @@ std::string get_base_type_name( const clang::QualType& type ) {
          return type_str.substr(i+1); 
       }
 
-      return type_str+"[]";
    return type_str;
 }
 
