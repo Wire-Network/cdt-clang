@@ -115,12 +115,35 @@ TypeMatcher typedef_decl_matcher = type().bind("eosio_abis");
 
 abi _abi;
 
+bool is_vector_type( const clang::QualType& type ) {
+   if ( auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(type.getTypePtr()) )
+      if ( type.getBaseTypeIdentifier()->getName().str() == "__vector_base" )
+         return true;
+   return false;
+}
+
+clang::QualType get_vector_type( const clang::QualType& type ) {
+   if ( auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(type.getTypePtr()) )
+      return tst->getArg(0).getAsType();
+}
+
 std::string get_base_type_name( const clang::QualType& type ) {
-   std::string type_str = type.getAsString();
+   clang::QualType newType = type;
+   bool is_a_vector = is_vector_type(type);
+   if ( is_a_vector )
+      newType = get_vector_type(type); 
+   if (is_vector_type(newType)) {
+      std::cout << "Error, can't have nested vectors\n";
+      throw abigen_ex;
+   }
+   std::string type_str = newType.getNonReferenceType().getAsString();
    int i = type_str.length()-1;
    for (; i > 0; i--)
-      if (type_str[i] == ':' || type_str[i] == ' ')
+      if (type_str[i] == ':' || type_str[i] == ' ') {
          return type_str.substr(i+1); 
+      }
+
+      return type_str+"[]";
    return type_str;
 }
 
@@ -165,9 +188,10 @@ std::string translate_type( const clang::QualType& t ) {
       {"action_name", "name"},
       {"symbol_type", "symbol"}
    }; 
+   std::string base_name = get_base_type_name(t);
    auto ret = translation_table[get_base_type_name(t)];
    if (ret == "")
-      return t.getAsString();
+      return t.getNonReferenceType().getAsString();
    return ret;
 }
 
@@ -328,7 +352,7 @@ void add_struct( const clang::CXXMethodDecl* decl, abi& abi ) {
             add_struct( param_type.getTypePtr()->getAsCXXRecordDecl(), abi );
          }
       }
-      new_struct.fields.push_back({param->getNameAsString(), get_type(param_type)});
+      new_struct.fields.push_back({param->getNameAsString(), get_type(param_type.getUnqualifiedType())});
    }
    abi.structs.insert(new_struct);
 }
