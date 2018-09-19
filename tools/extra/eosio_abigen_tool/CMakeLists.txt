@@ -14,9 +14,9 @@ if(APPLE)
 endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
-add_clang_executable(eosio-abigen ${CMAKE_BINARY_DIR}/eosio-abigen.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../whereami/whereami.cpp)
+add_clang_executable(eosio-abigen ${CMAKE_BINARY_DIR}/eosio-abigen.cpp)
 target_compile_options(eosio-abigen PRIVATE -fexceptions)
-target_include_directories(eosio-abigen PUBLIC ${Boost_INCLUDE_DIR} ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_CURRENT_SOURCE_DIR}/../whereami ${CMAKE_CURRENT_SOURCE_DIR}/../jsoncons/include)
+target_include_directories(eosio-abigen PUBLIC ${Boost_INCLUDE_DIR} ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_CURRENT_SOURCE_DIR}/../jsoncons/include)
 target_link_libraries(eosio-abigen PRIVATE
   clangTooling
   clangBasic

@@ -2,14 +2,12 @@
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
-#include <boost/process.hpp>
-#include <boost/filesystem.hpp>
 #include <iostream>
 #include <sstream>
 
 // Declares llvm::cl::extrahelp.
 #include "llvm/Support/CommandLine.h"
-using namespace boost::process;
+#include "llvm/Support/FileSystem.h"
 using namespace clang::tooling;
 using namespace llvm;
 #define ONLY_LD
@@ -24,46 +22,22 @@ int main(int argc, const char **argv) {
   Options opts = CreateOptions();
 
   std::string line;
-  // link
-  if (opts.link) {
-     ipstream link_stream;
-     std::string linkstr = std::string(WhereAmI()+"/wasm-ld "+opts.linker);
-     try {
-        child link(linkstr.c_str(), std_out > link_stream);
-        line = "";
-        while (link_stream && std::getline(link_stream, line) && !line.empty())
-           std::cout << line << std::endl;
-        link.wait();
-     } catch ( boost::process::process_error& e ) {
-        std::cout << e.what() << "\n";
-        return -1;
-     }
-  }
+  if (!eosio::cdt::environment::exec_subprogram("wasm-ld", opts.ld_options))
+     return -1;
 
-  if ( !boost::filesystem::exists( opts.output_fn ) ) {
+  if ( !llvm::sys::fs::exists( opts.output_fn ) ) {
      return -1;
   }
 
   // finally any post processing
   if (!fno_post_pass_opt) {
-     ipstream final_stream;
-     if ( !boost::filesystem::exists( opts.eosio_pp_dir+"/eosio-pp" ) ) {
+     if ( !llvm::sys::fs::exists( opts.eosio_pp_dir+"/eosio-pp" ) ) {
         std::cout << "Error: eosio.pp not found! (Try reinstalling eosio.wasmsdk)" << std::endl;
         return -1;
      }
-        
-     std::string finalstr = std::string(opts.eosio_pp_dir+"/eosio-pp "+opts.output_fn);
-     try {
-        child finalp(finalstr.c_str(), std_out > final_stream);
-        line = "";
-        while (final_stream && std::getline(final_stream, line) && !line.empty())
-           std::cout << line << std::endl;
-        finalp.wait();
-     } catch ( boost::process::process_error& e ) {
-        std::cout << e.what() << std::endl;
+     if (!eosio::cdt::environment::exec_subprogram("eosio-pp", {opts.output_fn})) 
         return -1;
-     }
-     if ( !boost::filesystem::exists( opts.output_fn ) ) {
+     if ( !llvm::sys::fs::exists( opts.output_fn ) ) {
         return -1;
      }
    }
