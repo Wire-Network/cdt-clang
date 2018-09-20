@@ -341,13 +341,15 @@ static Options CreateOptions(bool add_defaults=true) {
 #ifdef ONLY_LD
       ldopts.push_back(input_filename);
 #else
-      ldopts.push_back(
       copts.push_back(input_filename);
       abigen_inputs << input_filename << " ";
 #endif
    }
    
-   
+#ifdef ONLY_LD
+   ldopts.emplace_back("-L"+eosio::cdt::whereami::where()+"/../lib");
+   ldopts.emplace_back("-L"+eosio::cdt::whereami::where()+"/../lib64");
+#endif   
 #ifndef ONLY_LD
    if (!sysroot_opt.empty()) {
       copts.emplace_back("--sysroot="+sysroot_opt);
