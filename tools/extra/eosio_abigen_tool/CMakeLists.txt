@@ -1,11 +1,5 @@
 set(LLVM_LINK_COMPONENTS support)
 
-set(Boost_USE_STATIC_LIBS ON)
-find_package(Boost 1.67.0 REQUIRED system filesystem)
-if(Boost_FOUND)
-   include_directories (SYSTEM ${Boost_INCLUDE_DIR})
-endif()
-
 include_directories(include)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/eosio-abigen.cpp.in ${CMAKE_BINARY_DIR}/eosio-abigen.cpp)
@@ -14,13 +8,12 @@ if(APPLE)
 endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
-add_clang_executable(eosio-abigen ${CMAKE_BINARY_DIR}/eosio-abigen.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../whereami/whereami.cpp)
+add_clang_executable(eosio-abigen ${CMAKE_BINARY_DIR}/eosio-abigen.cpp)
 target_compile_options(eosio-abigen PRIVATE -fexceptions)
-target_include_directories(eosio-abigen PUBLIC ${Boost_INCLUDE_DIR} ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_CURRENT_SOURCE_DIR}/../whereami ${CMAKE_CURRENT_SOURCE_DIR}/../jsoncons/include)
+target_include_directories(eosio-abigen PUBLIC ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_CURRENT_SOURCE_DIR}/../jsoncons/include)
 target_link_libraries(eosio-abigen PRIVATE
   clangTooling
   clangBasic
-  clangASTMatchers
-  ${Boost_LIBRARIES})
+  clangASTMatchers)
 
 install(FILES ${CMAKE_BINARY_DIR}/bin/eosio-abigen DESTINATION ${CMAKE_INSTALL_BINDIR} PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)

@@ -1,7 +1,9 @@
 #pragma once
-#include <whereami.h>
-#include <boost/filesystem.hpp>
+#include "eosio/utils.hpp"
+#include "eosio/whereami/whereami.hpp"
+#include <vector>
 #include <string>
+#include "llvm/Support/FileSystem.h"
 
 #ifdef ONLY_LD
 #define LD_CAT EosioLdToolCategory
@@ -254,64 +256,54 @@ static cl::opt<bool> fcoroutine_ts_opt(
 #endif
 
 struct Options {
-   std::string compiler;
-   std::string linker;
-   std::string abigen_s;
    std::string output_fn;
-   std::string abigen_input;
+   std::string abigen_inputs;
    bool link;
    bool abigen;
    std::string eosio_pp_dir;
+   std::vector<std::string> comp_options;
+   std::vector<std::string> ld_options;
+   std::vector<std::string> abigen_options;
 };
 
-static std::string WhereAmI() {
-   static bool cached = false;
-   static std::vector<char> ret;
-   if (cached)
-      return {ret.data()};
-
-   int dirname_len = 0;
-   auto len = wai_getExecutablePath(NULL, 0, &dirname_len);
-   if (len <= 0)
-      return "";
-   ret.resize(len+1);
-   wai_getExecutablePath(ret.data(), len, &dirname_len);
-   ret[dirname_len] = '\0';
-   cached = true;
-   return {ret.data()};
-}
-
-static std::string GetCompDefaults() {
+static void GetCompDefaults(std::vector<std::string>& copts) {
    const char* eosio_apply_suff = "${CMAKE_SHARED_LIBRARY_SUFFIX}";
    std::string apply_lib;
-   if (boost::filesystem::exists(WhereAmI()+"/LLVMEosioApply"+eosio_apply_suff))
-      apply_lib = WhereAmI()+"/LLVMEosioApply"+eosio_apply_suff;
-   else if (boost::filesystem::exists(WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff))
-      apply_lib = WhereAmI()+"/../lib/LLVMEosioApply"+eosio_apply_suff;
    
-   std::string ret = " --target=wasm32 -nostdlib -ffreestanding -fno-builtin -fno-threadsafe-statics "
+   copts.emplace_back("--target=wasm32");
+   copts.emplace_back("-nostdlib");
+   copts.emplace_back("-ffreestanding");
+   copts.emplace_back("-fno-builtin");
+   copts.emplace_back("-fno-threadsafe-statics");
 #ifdef CPP_COMP
-          " -fno-rtti -fno-exceptions "
+   copts.emplace_back("-fno-rtti");
+   copts.emplace_back("-fno-exceptions");
 #endif
-          " -DBOOST_DISABLE_ASSERTS -DBOOST_EXCEPTION_DISABLE ";
-   return std::string(ret+" -Xclang -load -Xclang "+apply_lib+" ");
+   copts.emplace_back("-Xclang");
+   copts.emplace_back("-load");
+   copts.emplace_back("-Xclang");
+   if (llvm::sys::fs::exists(eosio::cdt::whereami::where()+"/LLVMEosioApply"+eosio_apply_suff))
+      copts.emplace_back(eosio::cdt::whereami::where()+"/LLVMEosioApply"+eosio_apply_suff);
+   else if (llvm::sys::fs::exists(eosio::cdt::whereami::where()+"/../lib/LLVMEosioApply"+eosio_apply_suff))
+      copts.emplace_back(eosio::cdt::whereami::where()+"/../lib/LLVMEosioApply"+eosio_apply_suff);
 }
 
 #ifdef ONLY_LD
-static std::string GetLdDefaults() {
-   const char* stack_size = "${EOSIO_STACK_SIZE}";
-   std::string ret = " -e apply --gc-sections --strip-all -zstack-size="+std::string(stack_size)+" "
-                     " --merge-data-segments -L"+WhereAmI()+"/../eosio.wasmsdk/lib ";
-   return ret;
+static void GetLdDefaults(std::vector<std::string>& ldopts) {
+   ldopts.emplace_back("-e apply");
+   ldopts.emplace_back("--gc-sections");
+   ldopts.emplace_back("--strip-all");
+   ldopts.emplace_back("-zstack-size="+std::string("${EOSIO_STACK_SIZE}"));
+   ldopts.emplace_back("--merge-data-segments");
 }
 #endif
 
 static Options CreateOptions(bool add_defaults=true) {
-   std::stringstream comp_ss;
-   std::stringstream link_ss;
-   std::stringstream abigen_ss;
    std::string output_fn;
-   std::stringstream abigen_input;
+   std::stringstream abigen_inputs;
+   std::vector<std::string> copts;
+   std::vector<std::string> ldopts;
+   std::vector<std::string> agopts;
    bool link = true;
    std::string pp_dir;
 #ifdef ONLY_LD
@@ -321,197 +313,252 @@ static Options CreateOptions(bool add_defaults=true) {
 #endif
 
    if (add_defaults) {
-      comp_ss << GetCompDefaults();
-      abigen_ss << GetCompDefaults();
+      GetCompDefaults(copts);
+      GetCompDefaults(agopts);
 #ifdef ONLY_LD
-      link_ss << GetLdDefaults();
+      GetLdDefaults(ldopts);
 #endif
    }
    
    if (!pp_path_opt.empty())
       pp_dir = pp_path_opt;
    else
-      pp_dir = WhereAmI();
+      pp_dir = eosio::cdt::whereami::where();
 
    if (!fno_cfl_aa_opt) {
-      comp_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
-      abigen_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
+      copts.emplace_back("-mllvm");
+      copts.emplace_back("-use-cfl-aa-in-codegen=both");
+      agopts.emplace_back("-mllvm");
+      agopts.emplace_back("-use-cfl-aa-in-codegen=both");
 #ifdef ONLY_LD
-      link_ss << " -mllvm -use-cfl-aa-in-codegen=both ";
+      ldopts.emplace_back("-mllvm");
+      ldopts.emplace_back("-use-cfl-aa-in-codegen=both");
 #else
-      link_ss << " -fno-cfl-aa ";
+      ldopts.emplace_back("-fno-cfl-aa");
 #endif
    }
    for ( auto input_filename : input_filename_opt ) {
 #ifdef ONLY_LD
-      link_ss << input_filename << " ";
+      ldopts.push_back(input_filename);
 #else
-      comp_ss << input_filename << " ";
-      abigen_input << input_filename << " ";
+      copts.push_back(input_filename);
+      abigen_inputs << input_filename << " ";
 #endif
    }
    
-   
+#ifdef ONLY_LD
+   ldopts.emplace_back("-L"+eosio::cdt::whereami::where()+"/../lib");
+   ldopts.emplace_back("-L"+eosio::cdt::whereami::where()+"/../lib64");
+#endif   
 #ifndef ONLY_LD
    if (!sysroot_opt.empty()) {
-      comp_ss << " --sysroot " << sysroot_opt << " ";
-      comp_ss << " -I" << sysroot_opt << "/include/libcxx" << " -I" << sysroot_opt << "/include/libc -I" << sysroot_opt << " -I${Boost_INCLUDE_DIRS} ";
-      abigen_ss << " -I" << sysroot_opt << "/include/libcxx" << " -I" << sysroot_opt << "/include/libc -I" << sysroot_opt << " -I${Boost_INCLUDE_DIRS} ";
-      link_ss << " -L" << sysroot_opt << "/lib "; 
+      copts.emplace_back("--sysroot="+sysroot_opt);
+      copts.emplace_back("-I"+sysroot_opt+"/include/libcxx");
+      copts.emplace_back("-I"+sysroot_opt+"/include/libc");
+      copts.emplace_back("-I${Boost_INCLUDE_DIRS}");
+      agopts.emplace_back("--sysroot="+sysroot_opt);
+      agopts.emplace_back("-I"+sysroot_opt+"/include/libcxx");
+      agopts.emplace_back("-I"+sysroot_opt+"/include/libc");
+      agopts.emplace_back("-I${Boost_INCLUDE_DIRS}");
+      ldopts.emplace_back("-L"+sysroot_opt+"/lib");
+      ldopts.emplace_back("-L"+sysroot_opt+"/lib64");
    }
    else {
-      comp_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc   -I" << WhereAmI() << "/../include -I${Boost_INCLUDE_DIRS} ";
-      comp_ss << " --sysroot=" << WhereAmI() << "/../ ";
-      abigen_ss << " -I" << WhereAmI() << "/../include/libcxx" << " -I" << WhereAmI() << "/../include/libc   -I" << WhereAmI() << "/../include -I${Boost_INCLUDE_DIRS} ";
-      link_ss << " -L" << WhereAmI() << "/../lib -L" << WhereAmI() << "/../lib64 ";
+      copts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include/libcxx");
+      copts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include/libc");
+      copts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include");
+      copts.emplace_back("-I${Boost_INCLUDE_DIRS}");
+      copts.emplace_back("--sysroot="+eosio::cdt::whereami::where()+"/../");
+      agopts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include/libcxx");
+      agopts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include/libc");
+      agopts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include");
+      agopts.emplace_back("-I${Boost_INCLUDE_DIRS}");
+      agopts.emplace_back("--sysroot="+eosio::cdt::whereami::where()+"/../");
+      ldopts.emplace_back("-L"+eosio::cdt::whereami::where()+"/../lib");
+      ldopts.emplace_back("-L"+eosio::cdt::whereami::where()+"/../lib64");
    }
 
    if (!isystem_opt.empty()) {
-      comp_ss << " -isystem " << isystem_opt << " "; 
+      copts.emplace_back("-isystem="+isystem_opt);
    }
-   comp_ss << " -c ";
-   if (CC_opt)
-      comp_ss << " -CC ";
-   if (C_opt)
-      comp_ss << " -C ";
+   if (CC_opt) {
+      copts.emplace_back("-CC");
+   }
+   if (C_opt) {
+      copts.emplace_back("-C");
+   }
+
+   copts.emplace_back("-c");
+
    if (c_opt) {
       link = false;
    }
-   if (dD_opt)
-      comp_ss << " -dD ";
-   if (dI_opt)
-      comp_ss << " -dI ";
-   if (dM_opt)
-      comp_ss << " -dM ";
-   for ( auto define : D_opt )
-      comp_ss << "-D" << define << " ";
-   if (emit_ast_opt)
-      comp_ss << " -emit-ast ";
-   if (emit_llvm_opt)
-      comp_ss << " -emit-llvm ";
-   if (E_opt)
-      comp_ss << " -E ";
-   if (color_diag_opt)
-      comp_ss << "-fcolor-diagnostics ";
-   if (finline_functions_opt)
-      comp_ss << " -finline-functions ";
-   if (finline_hint_functions_opt)
-      comp_ss << " -finline-hint-functions ";
-   if (fmerge_all_constants_opt)
-      comp_ss << " -fmerge-all-constants ";
-   if (fstack_protector_all_opt)
-      comp_ss << " -fstack-protector-all ";
-   if (fstack_protector_strong_opt)
-      comp_ss << " -fstack-protector-strong ";
-   if (fstack_protector_opt)
-      comp_ss << " -fstack-protector ";
-   if (fstrict_enums_opt)
-      comp_ss << " -fstrict-enums ";
-   if (fstrict_return_opt)
-      comp_ss << " -fstrict-return ";
+   if (dD_opt) {
+      copts.emplace_back("-dD");
+   }
+   if (dI_opt) {
+      copts.emplace_back("-dI");
+   }
+   if (dM_opt) {
+      copts.emplace_back("-dM");
+   }
+   for ( auto define : D_opt ) {
+      copts.emplace_back("-D"+define);
+   }
+   if (emit_ast_opt) {
+      copts.emplace_back("-emit-ast");
+   }
+   if (emit_llvm_opt) {
+      copts.emplace_back("-emit-llvm");
+   }
+   if (E_opt) {
+      copts.emplace_back("-E");
+   }
+   if (color_diag_opt) {
+      copts.emplace_back("-fcolor-diagnostics");
+   }
+   if (finline_functions_opt) {
+      copts.emplace_back("-finline-functions");
+   }
+   if (finline_hint_functions_opt) {
+      copts.emplace_back("-finline-hint-functions");
+   }
+   if (fmerge_all_constants_opt) {
+      copts.emplace_back("-fmerge-all-constants");
+   }
+   if (fstack_protector_all_opt) {
+      copts.emplace_back("-fstack-protector-all");
+   }
+   if (fstack_protector_strong_opt) {
+      copts.emplace_back("-fstack-protector-strong");
+   }
+   if (fstack_protector_opt) {
+      copts.emplace_back("-fstack-protector");
+   }
+   if (fstrict_enums_opt) {
+      copts.emplace_back("-fstrict-enums");
+   }
+   if (fstrict_return_opt) {
+      copts.emplace_back("-fstrict-return");
+   }
    for ( auto include : include_opt ) {
-      comp_ss << " -include=" << include << " ";
-      abigen_ss << " -include=" << include << " ";
+      copts.emplace_back("-include="+include);
+      agopts.emplace_back("-include="+include);
    }
    for ( auto inc_dir : I_opt ) {
-      comp_ss << " -I" << inc_dir << " ";
-      abigen_ss << " -I" << inc_dir << " ";
+      copts.emplace_back("-I"+inc_dir);
+      agopts.emplace_back("-I"+inc_dir);
    }
-   if (O_opt.empty())
-      comp_ss << " -O3 ";
-   else
-      comp_ss << " -O" << O_opt << " ";
+   if (O_opt.empty()) {
+      copts.emplace_back("-O3");
+   }
+   else {
+      copts.emplace_back("-O"+O_opt);
+   }
    if (S_opt) {
-      comp_ss << " -S ";
+      copts.emplace_back("-S");
       link = false;
    }
-   if (v_opt)
-      comp_ss << " -v ";
-   if (w_opt)
-      comp_ss << " -w ";
-   for ( auto warn : W_opt )
-      comp_ss << " -W" << warn << " ";
+   if (v_opt) {
+      copts.emplace_back("-v");
+   }
+   if (w_opt) {
+      copts.emplace_back("-w");
+   }
+   for ( auto warn : W_opt ) {
+      copts.emplace_back("-W"+warn);
+   }
 
 #endif
 #ifdef ONLY_LD
-   if (!fno_stack_first_opt)
-      link_ss << " -stack-first ";
+   if (!fno_stack_first_opt) {
+      ldopts.emplace_back("-stack-first");
+   }
    if (fno_lto_opt) {
-      link_ss << " --lto-O0 ";
+      ldopts.emplace_back("--lto-O0");
       if (!lto_opt_opt.empty())
          std::cerr << "Warning : lto disabled but lto optimization level given\n";
    }
-   else if (!lto_opt_opt.empty())
-      link_ss << " --lto-" << lto_opt_opt << " ";
-   else
-      link_ss << " --lto-O3 ";
-   link_ss << " -L" << WhereAmI() << "/../lib ";
+   else if (!lto_opt_opt.empty()) {
+      ldopts.emplace_back("--lto"+lto_opt_opt);
+   }
+   else {
+      ldopts.emplace_back("--lto-O3");
+   }
 #else
-   if (fno_stack_first_opt)
-      link_ss << " -fno-stack-first ";
-   if (fno_lto_opt) 
-      link_ss << " -fno-lto-opt ";
-   else if (!lto_opt_opt.empty())
-      link_ss << " -lto-opt=" << lto_opt_opt << " ";
+   if (fno_stack_first_opt) {
+      ldopts.emplace_back("-fno-stack-first");
+   }
+   if (fno_lto_opt) {
+      ldopts.emplace_back("-fno-lto-opt");
+   }
+   else if (!lto_opt_opt.empty()) {
+      ldopts.emplace_back("-lto-opt="+lto_opt_opt);
+   }
 #endif
 
-   for ( auto lib_dir : L_opt )
-      link_ss << " -L" << lib_dir << " ";
-   for ( auto library : l_opt )
-      link_ss << " -l" << library << " ";
+   for ( auto lib_dir : L_opt ) {
+      ldopts.emplace_back("-L"+lib_dir);
+   }
+   for ( auto library : l_opt ) {
+      ldopts.emplace_back("-l"+library);
+   }
    if (o_opt.empty()) {
-      comp_ss << " -o a.out ";
+      copts.emplace_back("-o a.out");
 #ifndef ONLY_LD
-      link_ss << " a.out ";
+      ldopts.emplace_back("a.out");
 #endif
-      link_ss << " -o a.out";
+      ldopts.emplace_back("-o a.out");
       output_fn = "a.out";
    }
    else {
-      comp_ss << " -o " << o_opt << " ";
+      copts.emplace_back("-o "+o_opt);
 #ifndef ONLY_LD
-      link_ss << o_opt << " ";
+      ldopts.push_back(o_opt);
 #endif
-      link_ss << " -o " << o_opt << " ";
+      ldopts.emplace_back("-o "+o_opt);
       output_fn = o_opt;
    }
  
 #ifndef ONLY_LD 
-   if (!eosio_imports_opt.empty())
-      link_ss << " -eosio-imports=" << eosio_imports_opt << " ";
+   if (!eosio_imports_opt.empty()) {
+      ldopts.emplace_back("-eosio-imports="+eosio_imports_opt);
+   }
 #else
-   if (!eosio_imports_opt.empty())
-      link_ss << " --allow-undefined-file=" << eosio_imports_opt << " ";
-   else 
-      link_ss << " --allow-undefined-file=" << WhereAmI() << "/../eosio.imports ";
+   if (!eosio_imports_opt.empty()) {
+      ldopts.emplace_back("--allow-undefined-file="+eosio_imports_opt);
+   }
+   else {
+      ldopts.emplace_back("--allow-undefined-file="+eosio::cdt::whereami::where()+"/../eosio.imports");
+   }
 #endif
 
 #ifndef ONLY_LD
 #ifdef CPP_COMP
    if (! std_opt.empty()) {
-      comp_ss << " --std=" << std_opt << " ";
-      abigen_ss << " --std=" << std_opt << " ";
+      copts.emplace_back("--std="+std_opt);
+      agopts.emplace_back("--std="+std_opt);
    }
    if (faligned_allocation_opt) { 
-      comp_ss << " -faligned-allocation ";
-      abigen_ss << " -faligned-allocation ";
+      copts.emplace_back("-faligned-allocation");
+      agopts.emplace_back("-faligned-allocation");
    }
    if (fcoroutine_ts_opt) { 
-      comp_ss << " -fcoroutine-ts ";
-      abigen_ss << " -fcoroutine-ts ";
+      copts.emplace_back("-fcoroutine-ts");
+      agopts.emplace_back("-fcoroutine-ts");
    }
    if (fno_elide_constructors_opt) {
-      comp_ss << " -fno-elide-constructors ";
-      abigen_ss << " -fno-elide-constructors ";
+      copts.emplace_back("-fno-elide-constructors");
+      agopts.emplace_back("-fno-elide-constructors");
    }
    if (fstrict_vtable_pointers_opt) {
-      comp_ss << " -fstrict-vtable-pointers ";
-      abigen_ss << " -fstrict-vtable-pointers ";
+      copts.emplace_back("-fstrict-vtable-pointers");
+      agopts.emplace_back("-fstrict-vtable-pointers");
    }
 #endif
 #else
-   link_ss << " -lc++ -lc -leosio ";
+   ldopts.emplace_back("-lc++ -lc -leosio");
 #endif
 
-   return {comp_ss.str(), link_ss.str(), abigen_ss.str(), output_fn, abigen_input.str(), link, abigen, pp_dir};
+   return {output_fn, abigen_inputs.str(), link, abigen, pp_dir, copts, ldopts, agopts};
 }
