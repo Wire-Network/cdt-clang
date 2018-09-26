@@ -279,6 +279,8 @@ static void GetCompDefaults(std::vector<std::string>& copts) {
    copts.emplace_back("-fno-rtti");
    copts.emplace_back("-fno-exceptions");
 #endif
+   copts.emplace_back("-DBOOST_DISABLE_ASSERTS");
+   copts.emplace_back("-DBOOST_EXCEPTION_DISABLE");
    copts.emplace_back("-Xclang");
    copts.emplace_back("-load");
    copts.emplace_back("-Xclang");
@@ -355,11 +357,9 @@ static Options CreateOptions(bool add_defaults=true) {
       copts.emplace_back("--sysroot="+sysroot_opt);
       copts.emplace_back("-I"+sysroot_opt+"/include/libcxx");
       copts.emplace_back("-I"+sysroot_opt+"/include/libc");
-      copts.emplace_back("-I${Boost_INCLUDE_DIRS}");
       agopts.emplace_back("--sysroot="+sysroot_opt);
       agopts.emplace_back("-I"+sysroot_opt+"/include/libcxx");
       agopts.emplace_back("-I"+sysroot_opt+"/include/libc");
-      agopts.emplace_back("-I${Boost_INCLUDE_DIRS}");
       ldopts.emplace_back("-L"+sysroot_opt+"/lib");
       ldopts.emplace_back("-L"+sysroot_opt+"/lib64");
    }
@@ -367,12 +367,10 @@ static Options CreateOptions(bool add_defaults=true) {
       copts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include/libcxx");
       copts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include/libc");
       copts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include");
-      copts.emplace_back("-I${Boost_INCLUDE_DIRS}");
       copts.emplace_back("--sysroot="+eosio::cdt::whereami::where()+"/../");
       agopts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include/libcxx");
       agopts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include/libc");
       agopts.emplace_back("-I"+eosio::cdt::whereami::where()+"/../include");
-      agopts.emplace_back("-I${Boost_INCLUDE_DIRS}");
       agopts.emplace_back("--sysroot="+eosio::cdt::whereami::where()+"/../");
       ldopts.emplace_back("-L"+eosio::cdt::whereami::where()+"/../lib");
       ldopts.emplace_back("-L"+eosio::cdt::whereami::where()+"/../lib64");
