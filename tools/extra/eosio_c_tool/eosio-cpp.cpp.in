@@ -23,7 +23,7 @@ int main(int argc, const char **argv) {
   });
   cl::ParseCommandLineOptions(argc, argv, std::string(COMPILER_NAME)+" (Eosio C++ -> WebAssembly compiler)");
   Options opts = CreateOptions();
-   if (!eosio::cdt::environment::exec_subprogram("clang++", opts.comp_options))
+   if (!eosio::cdt::environment::exec_subprogram("clang-7", opts.comp_options))
      return -1;
 
   if ( !llvm::sys::fs::exists( opts.output_fn ) ) {

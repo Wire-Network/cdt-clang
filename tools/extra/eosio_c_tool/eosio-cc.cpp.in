@@ -26,7 +26,7 @@ int main(int argc, const char **argv) {
   Options opts = CreateOptions();
 
   // first compile
-  if (!eosio::cdt::environment::exec_subprogram("clang", opts.comp_options))
+  if (!eosio::cdt::environment::exec_subprogram("clang-7", opts.comp_options))
      return -1;
 
   if ( !llvm::sys::fs::exists( opts.output_fn ) ) {
