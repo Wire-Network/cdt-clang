@@ -77,6 +77,10 @@ static cl::opt<bool> abigen_opt(
     "abigen",
     cl::desc("Generate ABI"),
     cl::cat(EosioCompilerToolCategory));
+static cl::opt<std::string> abigen_output_opt(
+    "abigen_output",
+    cl::desc("ABIGEN output"),
+    cl::cat(EosioCompilerToolCategory));
 // ignore for now
 static cl::opt<bool> g_opt(
       "g",
@@ -261,6 +265,7 @@ struct Options {
    bool link;
    bool abigen;
    std::string eosio_pp_dir;
+   std::string abigen_output;
    std::vector<std::string> comp_options;
    std::vector<std::string> ld_options;
    std::vector<std::string> abigen_options;
@@ -308,10 +313,12 @@ static Options CreateOptions(bool add_defaults=true) {
    std::vector<std::string> agopts;
    bool link = true;
    std::string pp_dir;
+   std::string abigen_output;
 #ifdef ONLY_LD
    bool abigen = false;
 #else
    bool abigen = abigen_opt;
+   abigen_output = abigen_output_opt;
 #endif
 
    if (add_defaults) {
@@ -558,5 +565,5 @@ static Options CreateOptions(bool add_defaults=true) {
    ldopts.emplace_back("-lc++ -lc -leosio");
 #endif
 
-   return {output_fn, abigen_inputs.str(), link, abigen, pp_dir, copts, ldopts, agopts};
+   return {output_fn, abigen_inputs.str(), link, abigen, pp_dir, abigen_output, copts, ldopts, agopts};
 }

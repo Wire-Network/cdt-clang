@@ -43,7 +43,8 @@ int main(int argc, const char **argv) {
   }
   if (opts.abigen) {
       opts.abigen_options.emplace(opts.abigen_options.begin(), "-- -Wno-unused-command-line-argument");
-      opts.abigen_options.emplace(opts.abigen_options.begin(), "-output="+opts.output_fn.substr(0, opts.output_fn.rfind(".wasm"))+".abi");
+      std::string abigen_output = opts.abigen_output.empty() ? opts.output_fn.substr(0, opts.output_fn.rfind(".wasm"))+".abi" : opts.abigen_output;
+      opts.abigen_options.emplace(opts.abigen_options.begin(), "-output="+abigen_output);
       opts.abigen_options.insert(opts.abigen_options.begin(), opts.abigen_inputs);
       if (!eosio::cdt::environment::exec_subprogram("eosio-abigen", opts.abigen_options))
          return -1;
