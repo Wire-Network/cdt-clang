@@ -206,18 +206,6 @@ class abigen : public generation_utils {
                         past_primary++;
                         continue;
                      }
-                     /*
-                     auto tst = dyn_cast<clang::TemplateSpecializationType>(arg.getAsType());
-                     if ( tst->getNumArgs() >= 2 ) {
-                        if ( auto first = dyn_cast<clang::CallExpr>(tst->getArg(0).getAsExpr()->IgnoreImpCasts()) ) {
-                           if ( clang::StringLiteral* n = dyn_cast<clang::StringLiteral>(first->getArg(0)->IgnoreImpCasts()) ) {
-                              auto second = dyn_cast<clang::TemplateSpecializationType>(tst->getArg(1).getAsType());
-                              abi.ptables[t.type].key_types.push_back(get_type(second->getArg(1).getAsType()));
-                              abi.ptables[t.type].key_names.push_back(n->getString().str());
-                           }
-                        }
-                     }
-                     */
                   }
                }
             }

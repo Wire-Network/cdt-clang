@@ -90,7 +90,7 @@ struct generation_utils {
          {"char", "int8"},
          {"uint8_t", "uint8"},
          {"int8_t", "int8"},
-         {"bool", "int8"},
+         {"_Bool", "bool"},
 
          {"float",  "float32"},
          {"double", "float64"},
