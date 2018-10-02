@@ -543,7 +543,12 @@ static Options CreateOptions(bool add_defaults=true) {
    if (! std_opt.empty()) {
       copts.emplace_back("--std="+std_opt);
       agopts.emplace_back("--std="+std_opt);
+   } else {
+      copts.emplace_back("--std=c++17");
+      agopts.emplace_back("--std=c++17");
+
    }
+
    if (faligned_allocation_opt) { 
       copts.emplace_back("-faligned-allocation");
       agopts.emplace_back("-faligned-allocation");

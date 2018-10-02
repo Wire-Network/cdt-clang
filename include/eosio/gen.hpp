@@ -13,7 +13,7 @@ namespace eosio { namespace cdt {
 struct generation_utils {
    std::function<void()> error_handler;
   
-   generation_utils( std::function<void()> ) : error_handler(err) {}
+   generation_utils( std::function<void()> err ) : error_handler(err) {}
    
    inline bool is_template_specialization( const clang::QualType& type, const std::vector<std::string>& names ) {
       auto check = [&](const clang::Type* pt) {
