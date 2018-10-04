@@ -127,6 +127,11 @@ class abigen : public generation_utils {
       new_struct.name = decl->getNameAsString();
       for (auto param : decl->parameters() ) {
          auto param_type = param->getType().getNonReferenceType().getUnqualifiedType();
+         if ( auto type  = dyn_cast<clang::TemplateSpecializationType>(param->getType().getTypePtr()) )
+            if ( auto decl = dyn_cast<clang::CXXRecordDecl>(type->getTemplateName().getAsTemplateDecl()->getTemplatedDecl()) )
+               if (decl->isEosioIgnore())
+                  param_type = type->getArg(0).getAsType();
+
          if (!is_builtin_type( param_type)) {
             if (is_aliasing(param_type))
                add_typedef(param_type);
@@ -300,8 +305,12 @@ class abigen : public generation_utils {
 
    abi& get_abi_ref() { return _abi; }
 
+   void set_contract_name( const std::string& cn ) { contract_name = cn; }
+   std::string get_contract_name()const { return contract_name; }
+
    private: 
       abi _abi;
+      std::string contract_name;
 };
 
 abigen& get_abigen_ref() {
@@ -309,17 +318,33 @@ abigen& get_abigen_ref() {
    return ag;
 }
 
+bool is_eosio_contract( const clang::CXXMethodDecl* decl ) {
+   return (decl->isEosioContract() && decl->getEosioContractAttr()->getName() == get_abigen_ref().get_contract_name()) ||
+          (decl->getParent()->isEosioContract() && decl->getParent()->getEosioContractAttr()->getName() == get_abigen_ref().get_contract_name());
+}
+
+bool is_eosio_contract( const clang::CXXRecordDecl* decl ) {
+   auto pd = dyn_cast<clang::CXXRecordDecl>(decl->getParent());
+   return (decl->isEosioContract() && decl->getEosioContractAttr()->getName() == get_abigen_ref().get_contract_name()) ||
+          (pd && pd->isEosioContract() && pd->getEosioContractAttr()->getName() == get_abigen_ref().get_contract_name());
+}
+
 class EosioMethodMatcher : public MatchFinder::MatchCallback {
    public:
       virtual void run( const MatchFinder::MatchResult& res ) {
          if (const clang::CXXMethodDecl* decl = res.Nodes.getNodeAs<clang::CXXMethodDecl>("eosio_abis")->getCanonicalDecl()) {
             abi abi;
-            if (decl->isEosioAction()) {
+            if (decl->isEosioAction() && is_eosio_contract(decl)) {
                get_abigen_ref().add_struct(decl);
                get_abigen_ref().add_action(decl);
                auto params = decl->parameters();
                for (auto param : params) {
                   abi_struct abis;
+                  if ( auto type  = dyn_cast<clang::TemplateSpecializationType>(param->getType().getTypePtr()) )
+                     if ( auto param_decl = dyn_cast<clang::CXXRecordDecl>(type->getTemplateName().getAsTemplateDecl()->getTemplatedDecl()) )
+                        if (param_decl->isEosioIgnore())
+                           break;
+
                   if (param->getType().getTypePtr()->isRecordType() && !get_abigen_ref().is_builtin_type(param->getType())) {
                      get_abigen_ref().add_struct(param->getType().getTypePtr()->getAsCXXRecordDecl());
                   }
@@ -338,11 +363,11 @@ class EosioRecordMatcher : public MatchFinder::MatchCallback {
          }
 
          if (const clang::CXXRecordDecl* decl = res.Nodes.getNodeAs<clang::CXXRecordDecl>("eosio_abis")) {
-            if (decl->isEosioAction()) {
+            if (decl->isEosioAction() && is_eosio_contract(decl)) {
                get_abigen_ref().add_struct(decl);
                get_abigen_ref().add_action(decl);
             }
-            if (decl->isEosioTable()) {
+            if (decl->isEosioTable() && is_eosio_contract(decl)) {
                get_abigen_ref().add_struct(decl);
                auto table_name = decl->getEosioTableAttr()->getName();
                get_abigen_ref().add_table(decl);
@@ -361,6 +386,11 @@ int main(int argc, const char **argv) {
    cl::opt<std::string> abidir(
     "output",
     cl::desc("Set the output filename and fullpath"),
+    cl::Required,
+    cl::cat(cat));
+   cl::opt<std::string> contract_name(
+    "contract",
+    cl::desc("Set the contract name"),
     cl::Required,
     cl::cat(cat));
    cl::opt<bool> def(
@@ -406,6 +436,7 @@ int main(int argc, const char **argv) {
    CommonOptionsParser opts( size, new_argv, cat, 0 );
 
    ClangTool tool( opts.getCompilations(), opts.getSourcePathList());
+   get_abigen_ref().set_contract_name(contract_name);
    EosioMethodMatcher eosio_method_matcher;
    EosioRecordMatcher eosio_record_matcher;
    MatchFinder finder;

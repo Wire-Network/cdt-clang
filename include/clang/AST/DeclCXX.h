@@ -725,10 +725,13 @@ public:
 
   /// Iterator that traverses the base classes of a class.
   using base_class_const_iterator = const CXXBaseSpecifier *;
+  bool isEosioContract() const { return hasAttr<EosioContractAttr>(); }
   bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
   bool isEosioTable() const { return hasAttr<EosioTableAttr>(); }
+  bool isEosioIgnore() const { return hasAttr<EosioIgnoreAttr>(); }
   EosioActionAttr* getEosioActionAttr() const { return getAttr<EosioActionAttr>(); }
   EosioTableAttr*  getEosioTableAttr() const { return getAttr<EosioTableAttr>(); }
+  EosioContractAttr*  getEosioContractAttr() const { return getAttr<EosioContractAttr>(); }
 
 
   CXXRecordDecl *getCanonicalDecl() override {
@@ -2064,7 +2067,9 @@ public:
   bool isStatic() const;
   bool isInstance() const { return !isStatic(); }
   bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
+  bool isEosioContract() const { return hasAttr<EosioContractAttr>(); }
   EosioActionAttr* getEosioActionAttr() const { return getAttr<EosioActionAttr>(); }
+  EosioContractAttr* getEosioContractAttr() const { return getAttr<EosioContractAttr>(); }
 
   /// Returns true if the given operator is implicitly static in a record
   /// context.
