@@ -60,7 +60,6 @@ struct generation_utils {
       if (name.empty()) {
          validate_name( decl->getParent()->getName().str(), [&]() { failed = true; } );
          if (failed) {
-            std::cout << "Warning, name <" <<decl->getParent()->getName().str() << "> is an invalid EOSIO name.\n";
             return false;
          }
          name = decl->getParent()->getName().str();
@@ -74,12 +73,11 @@ struct generation_utils {
       auto pd = llvm::dyn_cast<clang::CXXRecordDecl>(decl->getParent());
       if (decl->isEosioContract())
          name = decl->getEosioContractAttr()->getName();
-      else if (pd->isEosioContract())
+      else if (pd && pd->isEosioContract())
          name = pd->getEosioContractAttr()->getName();
       if (name.empty()) {
          validate_name( decl->getName().str(), [&]() { failed = true; } );
          if (failed) {
-            std::cout << "Warning, name <" <<decl->getName().str() << "> is an invalid EOSIO name.\n";
             return false;
          }
          name = decl->getName().str();

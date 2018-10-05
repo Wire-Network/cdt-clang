@@ -431,7 +431,6 @@ int main(int argc, const char **argv) {
    int tool_run = -1;
    try {
       tool_run = tool.run(newFrontendActionFactory(&finder).get());
-
       std::ofstream output(abidir);
       output << pretty_print(get_abigen_ref().to_json());
       output.close();
