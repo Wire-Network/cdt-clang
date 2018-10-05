@@ -7,6 +7,7 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include "eosio/utils.hpp"
 
 namespace eosio { namespace cdt {
 
@@ -14,19 +15,93 @@ struct generation_utils {
    std::function<void()> error_handler;
   
    generation_utils( std::function<void()> err ) : error_handler(err) {}
+    
+   static inline bool is_ignorable( const clang::QualType& type ) {
+      auto check = [&](const clang::Type* pt) {
+        if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt))
+         if (auto rt = llvm::dyn_cast<clang::RecordType>(tst->desugar()))
+            return rt->getDecl()->isEosioIgnore();
+
+         return false;
+      };
+
+      bool is_ignore = false;
+      if ( auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr()) )
+         is_ignore = check(pt->desugar().getTypePtr());
+      else
+         is_ignore = check(type.getTypePtr());
+      return is_ignore;
+   }
    
+   static inline clang::QualType get_ignored_type( const clang::QualType& type ) {
+      auto get = [&](const clang::Type* pt) {
+         if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt))
+            if (auto decl = llvm::dyn_cast<clang::RecordType>(tst->desugar()))
+               return decl->getDecl()->isEosioIgnore() ? tst->getArg(0).getAsType() : type;
+         return type;
+      };
+      
+      const clang::Type* t;
+      if ( auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr()) ) {
+         t = pt->desugar().getTypePtr();
+      }
+      else
+         t = type.getTypePtr();
+      return get(t);
+   }
+
+   static inline bool is_eosio_contract( const clang::CXXMethodDecl* decl, const std::string& cn ) {
+      bool failed = false;
+      std::string name = "";
+      if (decl->isEosioContract())
+         name = decl->getEosioContractAttr()->getName();
+      else if (decl->getParent()->isEosioContract())
+         name = decl->getParent()->getEosioContractAttr()->getName();
+      if (name.empty()) {
+         validate_name( decl->getParent()->getName().str(), [&]() { failed = true; } );
+         if (failed) {
+            std::cout << "Warning, name <" <<decl->getParent()->getName().str() << "> is an invalid EOSIO name.\n";
+            return false;
+         }
+         name = decl->getParent()->getName().str();
+      }
+      return name == cn; 
+   }
+
+   static inline bool is_eosio_contract( const clang::CXXRecordDecl* decl, const std::string& cn ) {
+      bool failed = false;
+      std::string name = "";
+      auto pd = llvm::dyn_cast<clang::CXXRecordDecl>(decl->getParent());
+      if (decl->isEosioContract())
+         name = decl->getEosioContractAttr()->getName();
+      else if (pd->isEosioContract())
+         name = pd->getEosioContractAttr()->getName();
+      if (name.empty()) {
+         validate_name( decl->getName().str(), [&]() { failed = true; } );
+         if (failed) {
+            std::cout << "Warning, name <" <<decl->getName().str() << "> is an invalid EOSIO name.\n";
+            return false;
+         }
+         name = decl->getName().str();
+      }
+      return cn == name;
+   }
+
+
    inline bool is_template_specialization( const clang::QualType& type, const std::vector<std::string>& names ) {
       auto check = [&](const clang::Type* pt) {
-        if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt)) {
-         if (auto rt = llvm::dyn_cast<clang::RecordType>(tst->desugar()))
-            if ( names.empty() ) {
-               return true;
-            } else {
-               for ( auto name : names )
-                  if ( rt->getDecl()->getName().str() == name )
-                     return true;
+         if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt)) {
+            if (auto rt = llvm::dyn_cast<clang::RecordType>(tst->desugar())) {
+               if ( names.empty() ) {
+                  return true;
+               } else {
+                  for ( auto name : names )
+                     if ( rt->getDecl()->getName().str() == name )
+                        return true;
+               }
             }
          }
+        return false;
       };
       bool is_specialization = false;
       if (auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr()))
@@ -36,7 +111,6 @@ struct generation_utils {
 
       return is_specialization;
    }
-
    inline clang::QualType get_template_argument( const clang::QualType& type ) {
       auto ret = [&](const clang::Type* t) {
          if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(t))

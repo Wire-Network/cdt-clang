@@ -49,7 +49,7 @@ void validate_name( const std::string& str, Lambda&& error_handler ) {
    const auto len = str.length();
    if ( len > 13 ) { 
       std::cout << "Error, name {" << str << "} is more than 13 characters long\n";
-      error_handler();
+      return error_handler();
    }
    uint64_t value = string_to_name( str.c_str() );
 
@@ -74,7 +74,7 @@ void validate_name( const std::string& str, Lambda&& error_handler ) {
 
    if ( str2 != str ) {
       std::cout << "Error, name not properly normalized\n";
-      error_handler();
+      return error_handler();
    }
 }
 struct environment {
