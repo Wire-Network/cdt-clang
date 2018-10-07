@@ -51,7 +51,6 @@ struct abi {
    std::set<abi_typedef> typedefs;
    std::set<abi_action>  actions;
    std::set<abi_table>   tables;
-   std::map<std::string, std::set<abi_table>>   ptables;
    std::vector<abi_error_message> error_messages;
 };
 

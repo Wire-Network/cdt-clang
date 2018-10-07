@@ -15,7 +15,10 @@ struct generation_utils {
    std::function<void()> error_handler;
   
    generation_utils( std::function<void()> err ) : error_handler(err) {}
-    
+   
+   static inline bool is_tuple( const clang::QualType& type ) {
+   }
+
    static inline bool is_ignorable( const clang::QualType& type ) {
       auto check = [&](const clang::Type* pt) {
         if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt))
