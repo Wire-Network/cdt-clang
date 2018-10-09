@@ -239,6 +239,11 @@ static cl::list<std::string> W_opt(
     cl::cat(EosioCompilerToolCategory),
     cl::Prefix,
     cl::ZeroOrMore);
+static cl::opt<std::string> contract_name(
+    "contract",
+    cl::desc("Contract name"),
+    cl::cat(EosioCompilerToolCategory));
+
 /// end c/c++ options
 
 /// begin c++ options
@@ -266,6 +271,7 @@ struct Options {
    bool abigen;
    std::string eosio_pp_dir;
    std::string abigen_output;
+   std::string abigen_contract;
    std::vector<std::string> comp_options;
    std::vector<std::string> ld_options;
    std::vector<std::string> abigen_options;
@@ -293,6 +299,11 @@ static void GetCompDefaults(std::vector<std::string>& copts) {
       copts.emplace_back(eosio::cdt::whereami::where()+"/LLVMEosioApply"+eosio_apply_suff);
    else if (llvm::sys::fs::exists(eosio::cdt::whereami::where()+"/../lib/LLVMEosioApply"+eosio_apply_suff))
       copts.emplace_back(eosio::cdt::whereami::where()+"/../lib/LLVMEosioApply"+eosio_apply_suff);
+
+   if (llvm::sys::fs::exists(eosio::cdt::whereami::where()+"/eosio_plugin"+eosio_apply_suff))
+      copts.emplace_back("-fplugin="+eosio::cdt::whereami::where()+"/eosio_plugin"+eosio_apply_suff);
+   else if (llvm::sys::fs::exists(eosio::cdt::whereami::where()+"/../lib/eosio_plugin"+eosio_apply_suff))
+      copts.emplace_back("-fplugin="+eosio::cdt::whereami::where()+"/../lib/eosio_plugin"+eosio_apply_suff);
 }
 
 #ifdef ONLY_LD
@@ -314,6 +325,8 @@ static Options CreateOptions(bool add_defaults=true) {
    bool link = true;
    std::string pp_dir;
    std::string abigen_output;
+   std::string abigen_contract;
+
 #ifdef ONLY_LD
    bool abigen = false;
 #else
@@ -333,7 +346,7 @@ static Options CreateOptions(bool add_defaults=true) {
       pp_dir = pp_path_opt;
    else
       pp_dir = eosio::cdt::whereami::where();
-
+   
    if (!fno_cfl_aa_opt) {
       copts.emplace_back("-mllvm");
       copts.emplace_back("-use-cfl-aa-in-codegen=both");
@@ -566,9 +579,14 @@ static Options CreateOptions(bool add_defaults=true) {
       agopts.emplace_back("-fstrict-vtable-pointers");
    }
 #endif
+   if (!contract_name.empty())
+      abigen_contract = contract_name;
+   else
+      abigen_contract = output_fn.substr(0, output_fn.rfind(".wasm"));
+
 #else
    ldopts.emplace_back("-lc++ -lc -leosio");
 #endif
-
-   return {output_fn, abigen_inputs.str(), link, abigen, pp_dir, abigen_output, copts, ldopts, agopts};
+      
+   return {output_fn, abigen_inputs.str(), link, abigen, pp_dir, abigen_output, abigen_contract, copts, ldopts, agopts};
 }

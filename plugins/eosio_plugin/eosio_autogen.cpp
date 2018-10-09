@@ -19,106 +19,71 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Sema/Sema.h"
 #include "llvm/Support/raw_ostream.h"
+#include "eosio/gen.hpp"
 using namespace clang;
 
 namespace {
 
-class PrintFunctionsConsumer : public ASTConsumer {
+template <size_t N>
+void emitError(CompilerInstance& inst, SourceLocation loc, const char (&err)[N]) {
+   FullSourceLoc full(loc, inst.getSourceManager());
+   unsigned id = inst.getDiagnostics().getCustomDiagID(clang::DiagnosticsEngine::Error, err);
+   inst.getDiagnostics().Report(full, id);
+}
+
+class ValidateVisitor : public RecursiveASTVisitor<ValidateVisitor> {
+   public:
+      ValidateVisitor(CompilerInstance& inst) : instance(inst) {}
+      bool VisitCXXMethodDecl(CXXMethodDecl* Decl) {
+         bool invalid_params = false;
+         for (auto param : Decl->parameters()) {
+            bool ignore = eosio::cdt::generation_utils::is_ignorable(param->getType().getNonReferenceType().getUnqualifiedType());
+            if (invalid_params && !ignore)
+               emitError(instance, param->getLocation(), "ignorable types cannot be preceded by non-ignorable types, this restriction will be relaxed in future versions");
+            invalid_params |= ignore;
+         }
+
+         return true;
+      }
+   private:
+      CompilerInstance& instance;
+};
+
+class ValidateConsumer : public ASTConsumer {
   CompilerInstance &Instance;
   std::set<std::string> ParsedTemplates;
 
 public:
-  PrintFunctionsConsumer(CompilerInstance &Instance,
-                         std::set<std::string> ParsedTemplates)
-      : Instance(Instance), ParsedTemplates(ParsedTemplates) {}
-
-  bool HandleTopLevelDecl(DeclGroupRef DG) override {
-    for (DeclGroupRef::iterator i = DG.begin(), e = DG.end(); i != e; ++i) {
-      const Decl *D = *i;
-      if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
-        llvm::errs() << "top-level-decl: \"" << ND->getNameAsString() << "\"\n";
-    }
-
-    return true;
+  ValidateConsumer(CompilerInstance &Instance)
+      : Instance(Instance), visitor(Instance) {}
+  virtual void HandleTranslationUnit(ASTContext& ctx) {
+     visitor.TraverseDecl(ctx.getTranslationUnitDecl());
   }
 
-  void HandleTranslationUnit(ASTContext& context) override {
-    if (!Instance.getLangOpts().DelayedTemplateParsing)
-      return;
-
-    // This demonstrates how to force instantiation of some templates in
-    // -fdelayed-template-parsing mode. (Note: Doing this unconditionally for
-    // all templates is similar to not using -fdelayed-template-parsig in the
-    // first place.)
-    // The advantage of doing this in HandleTranslationUnit() is that all
-    // codegen (when using -add-plugin) is completely finished and this can't
-    // affect the compiler output.
-    struct Visitor : public RecursiveASTVisitor<Visitor> {
-      const std::set<std::string> &ParsedTemplates;
-      Visitor(const std::set<std::string> &ParsedTemplates)
-          : ParsedTemplates(ParsedTemplates) {}
-      bool VisitFunctionDecl(FunctionDecl *FD) {
-        if (FD->isLateTemplateParsed() &&
-            ParsedTemplates.count(FD->getNameAsString()))
-          LateParsedDecls.insert(FD);
-        return true;
-      }
-
-      std::set<FunctionDecl*> LateParsedDecls;
-    } v(ParsedTemplates);
-    v.TraverseDecl(context.getTranslationUnitDecl());
-    clang::Sema &sema = Instance.getSema();
-    for (const FunctionDecl *FD : v.LateParsedDecls) {
-      clang::LateParsedTemplate &LPT =
-          *sema.LateParsedTemplateMap.find(FD)->second;
-      sema.LateTemplateParser(sema.OpaqueParser, LPT);
-      llvm::errs() << "late-parsed-decl: \"" << FD->getNameAsString() << "\"\n";
-    }   
-  }
+private:
+  ValidateVisitor visitor;
 };
 
-class PrintFunctionNamesAction : public PluginASTAction {
-  std::set<std::string> ParsedTemplates;
+class ValidateAction : public PluginASTAction {
 protected:
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
                                                  llvm::StringRef) override {
-    return llvm::make_unique<PrintFunctionsConsumer>(CI, ParsedTemplates);
+    return llvm::make_unique<ValidateConsumer>(CI);
   }
 
   bool ParseArgs(const CompilerInstance &CI,
                  const std::vector<std::string> &args) override {
-    for (unsigned i = 0, e = args.size(); i != e; ++i) {
-      llvm::errs() << "PrintFunctionNames arg = " << args[i] << "\n";
-
-      // Example error handling.
-      DiagnosticsEngine &D = CI.getDiagnostics();
-      if (args[i] == "-an-error") {
-        unsigned DiagID = D.getCustomDiagID(DiagnosticsEngine::Error,
-                                            "invalid argument '%0'");
-        D.Report(DiagID) << args[i];
-        return false;
-      } else if (args[i] == "-parse-template") {
-        if (i + 1 >= e) {
-          D.Report(D.getCustomDiagID(DiagnosticsEngine::Error,
-                                     "missing -parse-template argument"));
-          return false;
-        }
-        ++i;
-        ParsedTemplates.insert(args[i]);
-      }
-    }
-    if (!args.empty() && args[0] == "help")
-      PrintHelp(llvm::errs());
 
     return true;
   }
+  PluginASTAction::ActionType getActionType()override { return AddAfterMainAction; }
   void PrintHelp(llvm::raw_ostream& ros) {
-    ros << "Help for PrintFunctionNames plugin goes here\n";
+    ros << "Help for validate plugin goes here\n";
   }
 
 };
 
 }
 
-static FrontendPluginRegistry::Add<PrintFunctionNamesAction>
-X("print-fns", "print function names");
+static FrontendPluginRegistry::Add<ValidateAction>
+X("-validate", "only allow ignored arguments at the end of action method parameter list");

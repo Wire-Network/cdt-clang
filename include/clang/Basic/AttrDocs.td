@@ -852,6 +852,20 @@ Sample usage:
   }];
 }
 
+def EosioIgnoreDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``eosio::ignore`` attribute marks a template struct as an ignorable type.
+  }];
+}
+
+def EosioContractDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``eosio::contract`` attribute marks a method as being an eosio contract.
+  }];
+}
+
 def EosioActionDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{

@@ -439,7 +439,6 @@ option(CLANG_INCLUDE_TESTS
        ${LLVM_INCLUDE_TESTS})
 
 add_subdirectory(utils/TableGen)
-
 add_subdirectory(include)
 
 # All targets below may depend on all tablegen'd files.
@@ -458,6 +457,7 @@ endif()
 add_subdirectory(lib)
 add_subdirectory(tools)
 add_subdirectory(runtime)
+add_subdirectory(plugins)
 
 option(CLANG_BUILD_EXAMPLES "Build CLANG example programs by default." OFF)
 add_subdirectory(examples)

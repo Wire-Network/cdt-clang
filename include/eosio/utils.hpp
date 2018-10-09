@@ -49,7 +49,7 @@ void validate_name( const std::string& str, Lambda&& error_handler ) {
    const auto len = str.length();
    if ( len > 13 ) { 
       std::cout << "Error, name {" << str << "} is more than 13 characters long\n";
-      error_handler();
+      return error_handler();
    }
    uint64_t value = string_to_name( str.c_str() );
 
@@ -74,9 +74,30 @@ void validate_name( const std::string& str, Lambda&& error_handler ) {
 
    if ( str2 != str ) {
       std::cout << "Error, name not properly normalized\n";
-      error_handler();
+      return error_handler();
    }
 }
+
+std::string name_to_string( uint64_t nm ) {
+   static const char* charmap = ".12345abcdefghijklmnopqrstuvwxyz";
+   std::string str(13,'.');
+
+   uint64_t tmp = nm;
+   for( uint32_t i = 0; i <= 12; ++i ) {
+      char c = charmap[tmp & (i == 0 ? 0x0f : 0x1f)];
+      str[12-i] = c;
+      tmp >>= (i == 0 ? 4 : 5);
+   }
+
+   auto trim_right_dots = [](std::string& str) {
+      const auto last = str.find_last_not_of('.');
+      if (last != std::string::npos)
+         str = str.substr(0, last+1);
+   };
+   trim_right_dots( str );
+   return str;
+}
+
 struct environment {
    static llvm::ArrayRef<llvm::StringRef> get() {
       static std::vector<llvm::StringRef> env_table;

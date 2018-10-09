@@ -43,6 +43,7 @@ int main(int argc, const char **argv) {
   }
   if (opts.abigen) {
       opts.abigen_options.emplace(opts.abigen_options.begin(), "-- -Wno-unused-command-line-argument");
+      opts.abigen_options.emplace(opts.abigen_options.begin(), "-contract="+opts.abigen_contract);
       std::string abigen_output = opts.abigen_output.empty() ? opts.output_fn.substr(0, opts.output_fn.rfind(".wasm"))+".abi" : opts.abigen_output;
       opts.abigen_options.emplace(opts.abigen_options.begin(), "-output="+abigen_output);
       opts.abigen_options.insert(opts.abigen_options.begin(), opts.abigen_inputs);

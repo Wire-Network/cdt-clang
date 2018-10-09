@@ -5,6 +5,7 @@
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/Basic/Builtins.h"
 #include "eosio/utils.hpp"
@@ -43,7 +44,12 @@ struct abigen_exception : public std::exception {
 
 DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_abis");
 DeclarationMatcher record_decl_matcher = cxxRecordDecl().bind("eosio_abis");
-TypeMatcher typedef_decl_matcher = type().bind("eosio_abis");
+DeclarationMatcher typedef_decl_matcher = typedefDecl().bind("eosio_abis");
+auto               class_tmp_matcher    = classTemplateSpecializationDecl().bind("eosio_abis");
+//auto template_args_matcher = classTemplateDecl().bind("eosio_abis");//template_special_decl_matcher = classTemplateSpecializationDecl().bind("eosio_abis");
+//auto template_args_matcher = typeAliasDecl().bind("eosio_abis");//template_special_decl_matcher = classTemplateSpecializationDecl().bind("eosio_abis");
+
+//TypeMatcher typedef_decl_matcher = type().bind("eosio_abis");
 
 class abigen : public generation_utils {
    public:
@@ -111,11 +117,27 @@ class abigen : public generation_utils {
          std::cerr << "Error: abigen can only handle single inheritance <class " << decl->getName().str() << ">\n";
          throw abigen_ex;
       }
-      else if ( decl->getNumBases() == 1 )
+      else if ( decl->getNumBases() == 1 ) {
          ret.base = get_type(decl->bases_begin()->getType());
+         add_struct(decl->bases_begin()->getType().getTypePtr()->getAsCXXRecordDecl());
+      }
 
       for ( auto field : decl->fields() ) {
-         ret.fields.push_back({field->getName().str(), get_type(field->getType())});
+         if ( field->getName() == "transaction_extensions") {
+            abi_struct ext;
+            ext.name = "extension";
+            ext.fields.push_back( {"type", "uint16"} );
+            ext.fields.push_back( {"data", "bytes"} );
+            ret.fields.push_back( {"transaction_extensions", "extension[]"});
+            _abi.structs.insert(ext);
+         }
+         else {
+            ret.fields.push_back({field->getName().str(), get_type(field->getType())});
+            if ( is_template_specialization(field->getType(), {"vector", "optional"})) {
+               if ( get_template_argument(field->getType())->isRecordType() )
+                     add_struct(get_template_argument(field->getType()).getTypePtr()->getAsCXXRecordDecl());
+            }
+         }
       }
 
       ret.name = decl->getName().str();
@@ -127,11 +149,18 @@ class abigen : public generation_utils {
       new_struct.name = decl->getNameAsString();
       for (auto param : decl->parameters() ) {
          auto param_type = param->getType().getNonReferenceType().getUnqualifiedType();
+         if (is_ignorable(param->getType()))
+            param_type = get_ignored_type( param->getType() );
+
          if (!is_builtin_type( param_type)) {
             if (is_aliasing(param_type))
                add_typedef(param_type);
             if (param_type.getTypePtr()->isRecordType())
                add_struct( param_type.getTypePtr()->getAsCXXRecordDecl() );
+            else if (is_template_specialization(param_type, {"vector", "optional"})) {
+               if ( get_template_argument(param_type)->isRecordType())
+                  add_struct(get_template_argument(param_type).getTypePtr()->getAsCXXRecordDecl());
+            }
          }
          new_struct.fields.push_back({param->getNameAsString(), get_type(param_type)});
       }
@@ -143,8 +172,8 @@ class abigen : public generation_utils {
    }
 
    void add_table( const clang::CXXRecordDecl* decl ) {
+      tables.insert(decl);
       abi_table t;
-
       t.type = decl->getNameAsString();
       auto table_name = decl->getEosioTableAttr()->getName();
       if (!table_name.empty()) {
@@ -155,62 +184,18 @@ class abigen : public generation_utils {
          t.name = table_name.str();
       }
       else {
-         t.name = std::string("eosio_ptable:::")+t.type;
-         
+         t.name = t.type;
       }
-
-      if (_abi.ptables.find(t.type) == _abi.ptables.end())
-         _abi.ptables.emplace(t.type, std::set<abi_table>{t});
-      else
-         _abi.ptables.at(t.type).insert(t);
-      _abi.tables.insert(t);
-      /*
-      // get the primary_key name
-      for ( auto method : decl->methods() ) {
-         if ( method->getName() == "primary_key" ) 
-            if ( auto cs = dyn_cast<clang::CompoundStmt>(method->getBody()) )
-               if ( auto ret = dyn_cast<clang::ReturnStmt>(cs->body_front()) ) {
-                  if ( auto me = dyn_cast<clang::MemberExpr>(ret->getRetValue()->IgnoreImpCasts()) ) {
-                     auto name = me->getMemberNameInfo().getName().getAsString();
-                     t.key_names.push_back(name);
-                     for ( auto field : decl->fields() ) {
-                        if ( field->getName().str() == name ) {
-                           auto type = get_type( field->getType() );
-                           t.key_types.push_back(type);
-                           t.index_type = to_index_type(type);
-                        }
-                     }
-                     abi.tables.insert(t);
-                  }
-               }
-      }
-      */
+      ctables.insert(t);
    }
 
-   void add_multi_index_table( const clang::TemplateSpecializationType* type ) {
+   void add_table( uint64_t name, const clang::CXXRecordDecl* decl ) {
+      if (!(decl->isEosioTable() && abigen::is_eosio_contract(decl, get_contract_name())))
+         return;
       abi_table t;
-      if ( type->getNumArgs() >= 2 ) {
-         if ( clang::CallExpr* first = dyn_cast<clang::CallExpr>(type->getArg(0).getAsExpr()) ) {
-            if ( first->getNumArgs() == 1 ) {
-               if ( clang::StringLiteral* n = dyn_cast<clang::StringLiteral>(first->getArg(0)->IgnoreImpCasts()) ) {
-                  clang::QualType second = type->getArg(1).getAsType();
-                  t.name = n->getString().str();
-                  t.type = get_type(second);
-                  if (_abi.ptables.find(t.type) == _abi.ptables.end())
-                     _abi.ptables.emplace(t.type, std::set<abi_table>{t});
-                  else
-                     _abi.ptables.at(t.type).insert(t);
-                  int past_primary = 0;
-                  for ( auto& arg : type->template_arguments() ) {
-                     if ( past_primary < 2 ) {
-                        past_primary++;
-                        continue;
-                     }
-                  }
-               }
-            }
-         }
-      }
+      t.type = decl->getNameAsString();
+      t.name = name_to_string(name);
+      _abi.tables.insert(t);
    }
 
    std::string generate_json_comment() {
@@ -261,12 +246,6 @@ class abigen : public generation_utils {
       o["index_type"] = "i64";
       o["key_names"] = ojson::array();
       o["key_types"] = ojson::array();
-      /*
-      for ( auto name : abi.ptables.at(t.type).key_names ) 
-         o["key_names"].push_back(name);
-      for ( auto type : abi.ptables.at(t.type).key_types ) 
-         o["key_types"].push_back(type);
-      */
       return o;
    }
 
@@ -286,13 +265,27 @@ class abigen : public generation_utils {
       for ( auto a : _abi.actions ) {
          o["actions"].push_back(action_to_json( a ));
       }
+      std::set<abi_table> set_of_tables;
       o["tables"]     = ojson::array();
-      for ( auto t : _abi.tables ) {
-         for ( auto _t : _abi.ptables.at(t.type) ) {
-            if ( !_t.name.empty() && _t.name.find("eosio_ptable:::") == std::string::npos )
-               o["tables"].push_back(table_to_json( _t));
+      for ( auto t : ctables ) {
+         bool has_multi_index = false;
+         for ( auto u : _abi.tables ) {
+            if (t.type == u.type) {
+               has_multi_index = true;
+               break;
+            }
+            set_of_tables.insert(u);
          }
+         if (!has_multi_index)
+            set_of_tables.insert(t);
       }
+      for ( auto t : _abi.tables ) {
+         set_of_tables.insert(t);
+      }
+      for ( auto t : set_of_tables ) {
+         o["tables"].push_back(table_to_json( t ));
+      }
+
       o["ricardian_clauses"]  = ojson::array();
       o["abi_extensions"]     = ojson::array();
       return o;
@@ -300,8 +293,14 @@ class abigen : public generation_utils {
 
    abi& get_abi_ref() { return _abi; }
 
+   void set_contract_name( const std::string& cn ) { contract_name = cn; }
+   std::string get_contract_name()const { return contract_name; }
+
    private: 
       abi _abi;
+      std::set<const clang::CXXRecordDecl*> tables;
+      std::set<abi_table>                   ctables;
+      std::string contract_name;
 };
 
 abigen& get_abigen_ref() {
@@ -314,12 +313,15 @@ class EosioMethodMatcher : public MatchFinder::MatchCallback {
       virtual void run( const MatchFinder::MatchResult& res ) {
          if (const clang::CXXMethodDecl* decl = res.Nodes.getNodeAs<clang::CXXMethodDecl>("eosio_abis")->getCanonicalDecl()) {
             abi abi;
-            if (decl->isEosioAction()) {
+            if (decl->isEosioAction() && abigen::is_eosio_contract(decl, get_abigen_ref().get_contract_name())) {
                get_abigen_ref().add_struct(decl);
                get_abigen_ref().add_action(decl);
                auto params = decl->parameters();
                for (auto param : params) {
                   abi_struct abis;
+                  if (abigen::is_ignorable(param->getType()))
+                     continue;
+
                   if (param->getType().getTypePtr()->isRecordType() && !get_abigen_ref().is_builtin_type(param->getType())) {
                      get_abigen_ref().add_struct(param->getType().getTypePtr()->getAsCXXRecordDecl());
                   }
@@ -327,28 +329,47 @@ class EosioMethodMatcher : public MatchFinder::MatchCallback {
             }
          }
       }
-
+   
 };
 
 class EosioRecordMatcher : public MatchFinder::MatchCallback {
    public:
       virtual void run( const MatchFinder::MatchResult& res ) {
-         if (const clang::TemplateSpecializationType* type = res.Nodes.getNodeAs<clang::TemplateSpecializationType>("eosio_abis")) {
-            get_abigen_ref().add_multi_index_table( type );
-         }
-
          if (const clang::CXXRecordDecl* decl = res.Nodes.getNodeAs<clang::CXXRecordDecl>("eosio_abis")) {
-            if (decl->isEosioAction()) {
+            if (decl->isEosioAction() && abigen::is_eosio_contract(decl, get_abigen_ref().get_contract_name())) {
                get_abigen_ref().add_struct(decl);
                get_abigen_ref().add_action(decl);
+               for (auto field : decl->fields()) {
+                  if (!get_abigen_ref().is_builtin_type( field->getType() )) {
+                     if (get_abigen_ref().is_aliasing(field->getType()))
+                        get_abigen_ref().add_typedef(field->getType());
+                     if (field->getType()->isRecordType())
+                        get_abigen_ref().add_struct(field->getType()->getAsCXXRecordDecl());
+                  }
+               }
             }
-            if (decl->isEosioTable()) {
+            if (decl->isEosioTable() && abigen::is_eosio_contract(decl, get_abigen_ref().get_contract_name())) {
                get_abigen_ref().add_struct(decl);
-               auto table_name = decl->getEosioTableAttr()->getName();
                get_abigen_ref().add_table(decl);
+               for (auto field : decl->fields())
+                  if (!get_abigen_ref().is_builtin_type( field->getType() )) {
+                     if (get_abigen_ref().is_aliasing(field->getType()))
+                        get_abigen_ref().add_typedef(field->getType());
+                     if (field->getType()->isRecordType())
+                        get_abigen_ref().add_struct(field->getType()->getAsCXXRecordDecl());
+                  }
+            }
+         }
+      
+         if (const clang::ClassTemplateSpecializationDecl* decl = res.Nodes.getNodeAs<clang::ClassTemplateSpecializationDecl>("eosio_abis")) {
+            if ( decl->getName() == "multi_index" ) {
+               get_abigen_ref().add_table(decl->getTemplateArgs()[0].getAsIntegral().getExtValue(),
+                                         (clang::CXXRecordDecl*)((clang::RecordType*)decl->getTemplateArgs()[1].getAsType().getTypePtr())->getDecl());
             }
          }
       }
+
+
 };
 
 int main(int argc, const char **argv) {
@@ -361,6 +382,11 @@ int main(int argc, const char **argv) {
    cl::opt<std::string> abidir(
     "output",
     cl::desc("Set the output filename and fullpath"),
+    cl::Required,
+    cl::cat(cat));
+   cl::opt<std::string> contract_name(
+    "contract",
+    cl::desc("Set the contract name"),
     cl::Required,
     cl::cat(cat));
    cl::opt<bool> def(
@@ -406,16 +432,17 @@ int main(int argc, const char **argv) {
    CommonOptionsParser opts( size, new_argv, cat, 0 );
 
    ClangTool tool( opts.getCompilations(), opts.getSourcePathList());
+   get_abigen_ref().set_contract_name(contract_name);
    EosioMethodMatcher eosio_method_matcher;
    EosioRecordMatcher eosio_record_matcher;
    MatchFinder finder;
    finder.addMatcher(function_decl_matcher, &eosio_method_matcher);
    finder.addMatcher(record_decl_matcher, &eosio_record_matcher);
-   finder.addMatcher(typedef_decl_matcher, &eosio_record_matcher);
+   finder.addMatcher(class_tmp_matcher, &eosio_record_matcher);
+
    int tool_run = -1;
    try {
       tool_run = tool.run(newFrontendActionFactory(&finder).get());
-
       std::ofstream output(abidir);
       output << pretty_print(get_abigen_ref().to_json());
       output.close();

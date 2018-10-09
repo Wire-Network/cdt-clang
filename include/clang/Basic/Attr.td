@@ -929,6 +929,19 @@ def C11NoReturn : InheritableAttr {
   let Documentation = [C11NoReturnDocs];
 }
 
+def EosioIgnore : InheritableAttr {
+   let Spellings = [CXX11<"eosio", "ignore">, GNU<"eosio_ignore">];
+   let Subjects = SubjectList<[CXXRecord, Record]>;
+   let Documentation = [EosioIgnoreDocs];
+}
+
+def EosioContract : InheritableAttr {
+   let Spellings = [CXX11<"eosio", "contract">, GNU<"eosio_contract">];
+   let Args = [StringArgument<"name", 1>];
+   let Subjects = SubjectList<[CXXRecord, CXXMethod]>;
+   let Documentation = [EosioContractDocs];
+}
+
 def EosioAction : InheritableAttr {
    let Spellings = [CXX11<"eosio", "action">, GNU<"eosio_action">];
    let Args = [StringArgument<"name", 1>];
