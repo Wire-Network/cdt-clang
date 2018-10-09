@@ -46,10 +46,6 @@ DeclarationMatcher function_decl_matcher = cxxMethodDecl().bind("eosio_abis");
 DeclarationMatcher record_decl_matcher = cxxRecordDecl().bind("eosio_abis");
 DeclarationMatcher typedef_decl_matcher = typedefDecl().bind("eosio_abis");
 auto               class_tmp_matcher    = classTemplateSpecializationDecl().bind("eosio_abis");
-//auto template_args_matcher = classTemplateDecl().bind("eosio_abis");//template_special_decl_matcher = classTemplateSpecializationDecl().bind("eosio_abis");
-//auto template_args_matcher = typeAliasDecl().bind("eosio_abis");//template_special_decl_matcher = classTemplateSpecializationDecl().bind("eosio_abis");
-
-//TypeMatcher typedef_decl_matcher = type().bind("eosio_abis");
 
 class abigen : public generation_utils {
    public:
@@ -255,7 +251,9 @@ class abigen : public generation_utils {
       o["version"]     = _abi.version;
       o["structs"]     = ojson::array();
       for ( auto s : _abi.structs ) {
-         o["structs"].push_back(struct_to_json(s));
+         if ( !is_builtin_type(s.name) ) {
+            o["structs"].push_back(struct_to_json(s));
+         }
       }
       o["types"]       = ojson::array();
       for ( auto t : _abi.typedefs ) {
