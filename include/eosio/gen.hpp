@@ -54,36 +54,27 @@ struct generation_utils {
    }
 
    static inline bool is_eosio_contract( const clang::CXXMethodDecl* decl, const std::string& cn ) {
-      bool failed = false;
       std::string name = "";
       if (decl->isEosioContract())
          name = decl->getEosioContractAttr()->getName();
       else if (decl->getParent()->isEosioContract())
          name = decl->getParent()->getEosioContractAttr()->getName();
       if (name.empty()) {
-         validate_name( decl->getParent()->getName().str(), [&]() { failed = true; } );
-         if (failed) {
-            return false;
-         }
          name = decl->getParent()->getName().str();
       }
       return name == cn; 
    }
 
    static inline bool is_eosio_contract( const clang::CXXRecordDecl* decl, const std::string& cn ) {
-      bool failed = false;
       std::string name = "";
       auto pd = llvm::dyn_cast<clang::CXXRecordDecl>(decl->getParent());
-      if (decl->isEosioContract())
-         name = decl->getEosioContractAttr()->getName();
-      else if (pd && pd->isEosioContract())
-         name = pd->getEosioContractAttr()->getName();
-      if (name.empty()) {
-         validate_name( decl->getName().str(), [&]() { failed = true; } );
-         if (failed) {
-            return false;
-         }
-         name = decl->getName().str();
+      if (decl->isEosioContract()) {
+         auto nm = decl->getEosioContractAttr()->getName().str();
+         name = nm.empty() ? decl->getName().str() : nm;
+      }
+      else if (pd && pd->isEosioContract()) {
+         auto nm = pd->getEosioContractAttr()->getName().str();
+         name = nm.empty() ? pd->getName().str() : nm;
       }
       return cn == name;
    }
@@ -171,12 +162,14 @@ struct generation_utils {
          {"double", "float64"},
          {"long double", "float128"},
          
-         {"account_name", "name"},
-         {"permission_name", "name"},
-         {"table_name", "name"},
-         {"scope_name", "name"},
-         {"action_name", "name"},
-         {"symbol_type", "symbol"}
+         {"unsigned_int", "varuint32"},
+         {"signed_int",   "varint32"}, 
+         {"capi_name",    "name"},
+         {"capi_public_key", "public_key"},
+         {"capi_signature", "signature"},
+         {"capi_checksum160", "checksum160"},
+         {"capi_checksum256", "checksum256"},
+         {"capi_checksum512", "checksum512"}
       }; 
 
       std::string base_name = get_base_type_name(t);
@@ -187,8 +180,10 @@ struct generation_utils {
    }
 
    inline std::string translate_type( const clang::QualType& type ) {
-      if ( is_template_specialization( type, {"vector"} ) )
-         return _translate_type(get_template_argument( type ))+"[]";
+      if ( is_template_specialization( type, {"vector"} ) ) {
+         auto t =_translate_type(get_template_argument( type ));
+         return t=="int8" ? "bytes" : t+"[]";
+      }
       else if ( is_template_specialization( type, {"optional"} ) )
          return _translate_type(get_template_argument( type ))+"?";
       return _translate_type( type );

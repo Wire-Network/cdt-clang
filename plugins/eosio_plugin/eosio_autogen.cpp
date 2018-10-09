@@ -34,11 +34,10 @@ void emitError(CompilerInstance& inst, SourceLocation loc, const char (&err)[N])
 class ValidateVisitor : public RecursiveASTVisitor<ValidateVisitor> {
    public:
       ValidateVisitor(CompilerInstance& inst) : instance(inst) {}
-
       bool VisitCXXMethodDecl(CXXMethodDecl* Decl) {
          bool invalid_params = false;
          for (auto param : Decl->parameters()) {
-            bool ignore = eosio::cdt::generation_utils::is_ignorable(param->getType());
+            bool ignore = eosio::cdt::generation_utils::is_ignorable(param->getType().getNonReferenceType().getUnqualifiedType());
             if (invalid_params && !ignore)
                emitError(instance, param->getLocation(), "ignorable types cannot be preceded by non-ignorable types, this restriction will be relaxed in future versions");
             invalid_params |= ignore;
