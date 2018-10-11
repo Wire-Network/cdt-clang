@@ -250,10 +250,20 @@ class abigen : public generation_utils {
       o["____comment"] = generate_json_comment();
       o["version"]     = _abi.version;
       o["structs"]     = ojson::array();
-      for ( auto s : _abi.structs ) {
-         if ( !is_builtin_type(s.name) ) {
-            o["structs"].push_back(struct_to_json(s));
+      auto validate_struct = [&]( abi_struct as ) {
+         if ( is_builtin_type(as.name) )
+            return false;
+         for ( auto s : _abi.structs ) {
+            for ( auto f : s.fields ) {
+               if (as.name == f.type)
+                  return true;
+            }
          }
+         return false;
+      };
+      for ( auto s : _abi.structs ) {
+         if (validate_struct(s))
+            o["structs"].push_back(struct_to_json(s));
       }
       o["types"]       = ojson::array();
       for ( auto t : _abi.typedefs ) {
@@ -427,6 +437,7 @@ int main(int argc, const char **argv) {
    options.push_back("-fno-exceptions");
    options.push_back("-I${Boost_INCLUDE_DIRS}");
    options.push_back("-Wno-everything");
+   options.push_back("-std=c++17");
    options.push_back(std::string("-I")+eosio::cdt::whereami::where()+"/../include/libcxx");
    options.push_back(std::string("-I")+eosio::cdt::whereami::where()+"/../include/libc");
    options.push_back(std::string("-I")+eosio::cdt::whereami::where()+"/../include");
