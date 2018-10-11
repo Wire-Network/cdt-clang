@@ -258,6 +258,12 @@ class abigen : public generation_utils {
                if (as.name == f.type)
                   return true;
             }
+            if ( s.base == as.name )
+               return true;
+            for ( auto a : _abi.actions ) {
+               if ( a.type == as.name )
+                  return true;
+            }
          }
          return false;
       };
