@@ -257,6 +257,24 @@ class abigen : public generation_utils {
                break;
          return name.substr(0,i+1);
       };
+
+      std::set<abi_table> set_of_tables;
+      for ( auto t : ctables ) {
+         bool has_multi_index = false;
+         for ( auto u : _abi.tables ) {
+            if (t.type == u.type) {
+               has_multi_index = true;
+               break;
+            }
+            set_of_tables.insert(u);
+         }
+         if (!has_multi_index)
+            set_of_tables.insert(t);
+      }
+      for ( auto t : _abi.tables ) {
+         set_of_tables.insert(t);
+      }
+
       auto validate_struct = [&]( abi_struct as ) {
          if ( is_builtin_type(as.name) )
             return false;
@@ -272,7 +290,7 @@ class abigen : public generation_utils {
             if ( as.name == a.type )
                return true;
          }
-         for( auto t : _abi.tables ) {
+         for( auto t : set_of_tables ) {
             if (as.name == t.type)
                return true;
          }
@@ -291,23 +309,7 @@ class abigen : public generation_utils {
       for ( auto a : _abi.actions ) {
          o["actions"].push_back(action_to_json( a ));
       }
-      std::set<abi_table> set_of_tables;
       o["tables"]     = ojson::array();
-      for ( auto t : ctables ) {
-         bool has_multi_index = false;
-         for ( auto u : _abi.tables ) {
-            if (t.type == u.type) {
-               has_multi_index = true;
-               break;
-            }
-            set_of_tables.insert(u);
-         }
-         if (!has_multi_index)
-            set_of_tables.insert(t);
-      }
-      for ( auto t : _abi.tables ) {
-         set_of_tables.insert(t);
-      }
       for ( auto t : set_of_tables ) {
          o["tables"].push_back(table_to_json( t ));
       }

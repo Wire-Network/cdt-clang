@@ -119,11 +119,11 @@ struct generation_utils {
       clang::QualType newType = type;
       std::string type_str = newType.getNonReferenceType().getAsString();
       int i = type_str.length()-1;
-      for (; i > 0; i--)
+      for (; i > 0; i--) {
          if (type_str[i] == ':') {
             return type_str.substr(i+1); 
          }
-       if (type_str[i] == ' ') {
+         if (type_str[i] == ' ') {
             static const std::string valid_prefixs[] = {"long", "signed", "unsigned" };
             bool valid = false;
             for (auto &s : valid_prefixs) {
