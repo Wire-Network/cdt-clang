@@ -250,37 +250,15 @@ class abigen : public generation_utils {
       o["____comment"] = generate_json_comment();
       o["version"]     = _abi.version;
       o["structs"]     = ojson::array();
-      auto validate_struct = [&]( abi_struct as ) {
-         if ( is_builtin_type(as.name) )
-            return false;
-         for ( auto s : _abi.structs ) {
-            for ( auto f : s.fields ) {
-               if (as.name == f.type)
-                  return true;
-            }
-            if ( s.base == as.name )
-               return true;
-            for ( auto a : _abi.actions ) {
-               if ( a.type == as.name )
-                  return true;
-            }
-         }
-         return false;
+      auto remove_suffix = [&]( std::string name ) {
+         int i = name.length()-1;
+         for (; i >= 0; i--) 
+            if ( name[i] != '[' && name[i] != ']' && name[i] != '?' )
+               break;
+         return name.substr(0,i+1);
       };
-      for ( auto s : _abi.structs ) {
-         if (validate_struct(s))
-            o["structs"].push_back(struct_to_json(s));
-      }
-      o["types"]       = ojson::array();
-      for ( auto t : _abi.typedefs ) {
-         o["types"].push_back(typedef_to_json( t ));
-      }
-      o["actions"]     = ojson::array();
-      for ( auto a : _abi.actions ) {
-         o["actions"].push_back(action_to_json( a ));
-      }
+
       std::set<abi_table> set_of_tables;
-      o["tables"]     = ojson::array();
       for ( auto t : ctables ) {
          bool has_multi_index = false;
          for ( auto u : _abi.tables ) {
@@ -296,6 +274,42 @@ class abigen : public generation_utils {
       for ( auto t : _abi.tables ) {
          set_of_tables.insert(t);
       }
+
+      auto validate_struct = [&]( abi_struct as ) {
+         if ( is_builtin_type(as.name) )
+            return false;
+         for ( auto s : _abi.structs ) {
+            for ( auto f : s.fields ) {
+               if (as.name == remove_suffix(f.type))
+                  return true;
+            }
+            if ( s.base == as.name )
+               return true;
+         }
+         for ( auto a : _abi.actions ) {
+            if ( as.name == a.type )
+               return true;
+         }
+         for( auto t : set_of_tables ) {
+            if (as.name == t.type)
+               return true;
+         }
+         return false;
+      };
+
+      for ( auto s : _abi.structs ) {
+         if (validate_struct(s))
+            o["structs"].push_back(struct_to_json(s));
+      }
+      o["types"]       = ojson::array();
+      for ( auto t : _abi.typedefs ) {
+         o["types"].push_back(typedef_to_json( t ));
+      }
+      o["actions"]     = ojson::array();
+      for ( auto a : _abi.actions ) {
+         o["actions"].push_back(action_to_json( a ));
+      }
+      o["tables"]     = ojson::array();
       for ( auto t : set_of_tables ) {
          o["tables"].push_back(table_to_json( t ));
       }
