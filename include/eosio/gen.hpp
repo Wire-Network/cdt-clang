@@ -103,10 +103,10 @@ struct generation_utils {
 
       return is_specialization;
    }
-   inline clang::QualType get_template_argument( const clang::QualType& type ) {
+   inline clang::QualType get_template_argument( const clang::QualType& type, int index = 0 ) {
       auto ret = [&](const clang::Type* t) {
          if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(t))
-            return tst->getArg(0).getAsType();
+            return tst->getArg(index).getAsType();
          std::cout << "Internal error, wrong type of template specialization\n";
          error_handler();
       };
@@ -119,11 +119,14 @@ struct generation_utils {
       clang::QualType newType = type;
       std::string type_str = newType.getNonReferenceType().getAsString();
       int i = type_str.length()-1;
+      int template_nested = 0;
       for (; i > 0; i--) {
-         if (type_str[i] == ':') {
+         if (type_str[i] == '>') ++template_nested;
+         if (type_str[i] == '<') --template_nested;
+         if (type_str[i] == ':' && template_nested == 0) {
             return type_str.substr(i+1); 
          }
-         if (type_str[i] == ' ') {
+         if (type_str[i] == ' ' && template_nested == 0) {
             static const std::string valid_prefixs[] = {"long", "signed", "unsigned" };
             bool valid = false;
             for (auto &s : valid_prefixs) {
@@ -197,12 +200,23 @@ struct generation_utils {
    }
 
    inline std::string translate_type( const clang::QualType& type ) {
-      if ( is_template_specialization( type, {"vector"} ) ) {
+      if ( is_template_specialization( type, {"vector", "set"} ) ) {
          auto t =_translate_type(get_template_argument( type ));
          return t=="int8" ? "bytes" : t+"[]";
       }
       else if ( is_template_specialization( type, {"optional"} ) )
          return _translate_type(get_template_argument( type ))+"?";
+      else if ( is_template_specialization( type, {"map"} )) {
+         auto t0 = _translate_type(get_template_argument( type ));
+         auto t1 = _translate_type(get_template_argument( type, 1));
+         std::string ret = "pair_" + t0 + "_" + t1 + "[]";
+         std::replace(ret.begin(), ret.end(), '<', '_');
+         std::replace(ret.begin(), ret.end(), '>', '_');
+         std::replace(ret.begin(), ret.end(), ',', '_');
+         std::replace(ret.begin(), ret.end(), ' ', '_');
+         std::replace(ret.begin(), ret.end(), ':', '_');
+         return ret;
+      }
       return _translate_type( type );
    }
 
@@ -263,7 +277,7 @@ struct generation_utils {
    
    inline bool is_builtin_type( const clang::QualType& t ) {
       std::string nt = translate_type(t);
-      return is_builtin_type(nt) || is_name_type(nt) || is_template_specialization(t, {"vector", "optional"});
+      return is_builtin_type(nt) || is_name_type(nt) || is_template_specialization(t, {"vector", "set", "optional"});
    } 
 
    inline bool is_cxx_record( const clang::QualType& t ) {
@@ -284,6 +298,7 @@ struct generation_utils {
    inline bool is_aliasing( const clang::QualType& t ) {
       if (is_name_type(get_base_type_name(t)))
          return true;
+      if (get_base_type_name(t).find("<") != std::string::npos) return false;
       return get_base_type_name(t).compare(get_type_alias(t)) != 0;
    }
 };
