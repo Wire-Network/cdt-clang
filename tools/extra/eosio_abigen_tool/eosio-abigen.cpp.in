@@ -109,8 +109,17 @@ class abigen : public generation_utils {
 
    void add_map(const clang::QualType& type) {
       for (int i = 0; i < 2; ++i) {
-         if ( get_template_argument(type, i)->isRecordType() )
-            add_struct(get_template_argument(type, i).getTypePtr()->getAsCXXRecordDecl());
+         clang::QualType ftype = get_template_argument(type, i);
+         std::string ty = translate_type(ftype);
+         if ( !(is_builtin_type(ty)) ) {
+            if ( is_template_specialization(ftype, {"vector", "set", "optional"})) {
+               if ( get_template_argument(ftype)->isRecordType() )
+                  add_struct(get_template_argument(ftype).getTypePtr()->getAsCXXRecordDecl());
+            }
+            else if ( is_template_specialization(ftype, {"map"})) {
+               add_map(ftype);
+            }
+         }
       }
       abi_struct kv;
       std::string name = get_type(type);
