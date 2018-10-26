@@ -277,7 +277,7 @@ struct generation_utils {
    
    inline bool is_builtin_type( const clang::QualType& t ) {
       std::string nt = translate_type(t);
-      return is_builtin_type(nt) || is_name_type(nt) || is_template_specialization(t, {"vector", "set", "optional"});
+      return is_builtin_type(nt) || is_name_type(nt) || is_template_specialization(t, {"vector", "set", "map", "optional"});
    } 
 
    inline bool is_cxx_record( const clang::QualType& t ) {
@@ -296,6 +296,8 @@ struct generation_utils {
    }
 
    inline bool is_aliasing( const clang::QualType& t ) {
+      if (is_builtin_type(t))
+         return false;
       if (is_name_type(get_base_type_name(t)))
          return true;
       if (get_base_type_name(t).find("<") != std::string::npos) return false;
