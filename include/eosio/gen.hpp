@@ -96,8 +96,9 @@ struct generation_utils {
         return false;
       };
       bool is_specialization = false;
-      if (auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr()))
+      if (auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr())) {
          is_specialization = check(pt->desugar().getTypePtr());
+      }
       else
          is_specialization = check(type.getTypePtr());
 
@@ -198,6 +199,15 @@ struct generation_utils {
          return base_name;
       return ret;
    }
+   inline std::string replace_in_name( std::string name ) {
+      std::string ret = name;
+      std::replace(ret.begin(), ret.end(), '<', '_');
+      std::replace(ret.begin(), ret.end(), '>', '_');
+      std::replace(ret.begin(), ret.end(), ',', '_');
+      std::replace(ret.begin(), ret.end(), ' ', '_');
+      std::replace(ret.begin(), ret.end(), ':', '_');
+      return ret;
+   }
 
    inline std::string translate_type( const clang::QualType& type ) {
       if ( is_template_specialization( type, {"vector", "set"} ) ) {
@@ -209,13 +219,18 @@ struct generation_utils {
       else if ( is_template_specialization( type, {"map"} )) {
          auto t0 = _translate_type(get_template_argument( type ));
          auto t1 = _translate_type(get_template_argument( type, 1));
-         std::string ret = "pair_" + t0 + "_" + t1 + "[]";
-         std::replace(ret.begin(), ret.end(), '<', '_');
-         std::replace(ret.begin(), ret.end(), '>', '_');
-         std::replace(ret.begin(), ret.end(), ',', '_');
-         std::replace(ret.begin(), ret.end(), ' ', '_');
-         std::replace(ret.begin(), ret.end(), ':', '_');
-         return ret;
+         return replace_in_name("pair_" + t0 + "_" + t1 + "[]");
+      }
+      else if ( is_template_specialization( type, {"tuple"} )) {
+         auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr());
+         auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt->desugar().getTypePtr());
+         std::string ret = "tuple_";
+         for (int i=0; i < tst->getNumArgs(); ++i) {
+            ret += _translate_type(get_template_argument( type, i ));
+            if ( i < tst->getNumArgs()-1 ) 
+               ret += "_";
+         }
+         return replace_in_name(ret);
       }
       return _translate_type( type );
    }
@@ -292,7 +307,9 @@ struct generation_utils {
    inline std::string get_type_alias( const clang::QualType& t ) {
       if (is_name_type(get_base_type_name(t)))
          return "name";
-      return get_type(clang::QualType(t).getCanonicalType());
+      if (auto dt = llvm::dyn_cast<clang::TypedefType>(t.getTypePtr()))
+         return get_type(dt->desugar());
+      return get_type(t);
    }
 
    inline bool is_aliasing( const clang::QualType& t ) {
