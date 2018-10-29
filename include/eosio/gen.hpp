@@ -212,6 +212,18 @@ struct generation_utils {
       return ret;
    }
 
+   inline std::string get_template_name( const clang::QualType& type ) { 
+      auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr());
+      auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt->desugar().getTypePtr());
+      std::string ret = tst->getTemplateName().getAsTemplateDecl()->getName().str()+"_";
+      for (int i=0; i < tst->getNumArgs(); ++i) {
+         ret += _translate_type(get_template_argument( type, i ));
+         if ( i < tst->getNumArgs()-1 ) 
+            ret += "_";
+      }
+      return replace_in_name(ret);
+   }
+
    inline std::string translate_type( const clang::QualType& type ) {
       if ( is_template_specialization( type, {"vector", "set"} ) ) {
          auto t =_translate_type(get_template_argument( type ));
@@ -233,6 +245,17 @@ struct generation_utils {
          auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr());
          auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt->desugar().getTypePtr());
          std::string ret = "tuple_";
+         for (int i=0; i < tst->getNumArgs(); ++i) {
+            ret += _translate_type(get_template_argument( type, i ));
+            if ( i < tst->getNumArgs()-1 ) 
+               ret += "_";
+         }
+         return replace_in_name(ret);
+      }
+      else if ( is_template_specialization( type, {} )) {
+         auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr());
+         auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt->desugar().getTypePtr());
+         std::string ret = tst->getTemplateName().getAsTemplateDecl()->getName().str()+"_";
          for (int i=0; i < tst->getNumArgs(); ++i) {
             ret += _translate_type(get_template_argument( type, i ));
             if ( i < tst->getNumArgs()-1 ) 

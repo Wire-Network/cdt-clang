@@ -153,13 +153,13 @@ class abigen : public generation_utils {
       _abi.structs.insert(kv);
    }
 
-   void add_struct( const clang::CXXRecordDecl* decl ) {
+   void add_struct( const clang::CXXRecordDecl* decl, const std::string& rname="" ) {
       abi_struct ret;
       if ( decl->getNumBases() == 1 ) {
          ret.base = get_type(decl->bases_begin()->getType());
          add_struct(decl->bases_begin()->getType().getTypePtr()->getAsCXXRecordDecl());
       }
-      
+      std::string sub_name = "";
       for ( auto field : decl->fields() ) {
          if ( field->getName() == "transaction_extensions") {
             abi_struct ext;
@@ -171,11 +171,14 @@ class abigen : public generation_utils {
          }
          else {
             ret.fields.push_back({field->getName().str(), get_type(field->getType())});
+            sub_name += "_" + get_type(field->getType());
             add_type(field->getType());
          }
       }
-
-      ret.name = decl->getName().str();
+      if (!rname.empty())
+         ret.name = rname;
+      else
+         ret.name = decl->getName().str();
       _abi.structs.insert(ret);
    }
 
@@ -233,13 +236,15 @@ class abigen : public generation_utils {
             else
                add_type(get_template_argument(type));
          }
-         else if (is_template_specialization(type, {"map"})) {
+         else if (is_template_specialization(type, {"map"}))
             add_map(type);
-         }
          else if (is_template_specialization(type, {"pair"}))
             add_pair(type);
          else if (is_template_specialization(type, {"tuple"}))
             add_tuple(type);
+         else if (is_template_specialization(type, {})) {
+            add_struct(type.getTypePtr()->getAsCXXRecordDecl(), get_template_name(type));
+         }
          else if (type.getTypePtr()->isRecordType())
             add_struct(type.getTypePtr()->getAsCXXRecordDecl());
       }
