@@ -323,7 +323,7 @@ struct generation_utils {
    
    inline bool is_builtin_type( const clang::QualType& t ) {
       std::string nt = translate_type(t);
-      return is_builtin_type(nt) || is_name_type(nt) || is_template_specialization(t, {"vector", "optional"});
+      return is_builtin_type(nt) || is_name_type(nt); // || is_template_specialization(t, {"optional"});
    } 
 
    inline bool is_cxx_record( const clang::QualType& t ) {

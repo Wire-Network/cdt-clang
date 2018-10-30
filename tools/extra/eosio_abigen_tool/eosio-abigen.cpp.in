@@ -230,12 +230,8 @@ class abigen : public generation_utils {
       if (!is_builtin_type(type)) {
          if (is_aliasing(type))
             add_typedef(type);
-         else if (is_template_specialization(type, {"vector", "set", "optional"})) {
-            if ( get_template_argument(type)->isRecordType() )
-               add_struct(get_template_argument(type).getTypePtr()->getAsCXXRecordDecl());
-            else
+         else if (is_template_specialization(type, {"vector", "set", "optional"}))
                add_type(get_template_argument(type));
-         }
          else if (is_template_specialization(type, {"map"}))
             add_map(type);
          else if (is_template_specialization(type, {"pair"}))
@@ -361,13 +357,16 @@ class abigen : public generation_utils {
          for ( auto as : _abi.structs )
             if (validate_struct(as))
                for ( auto f : as.fields )
-                  if ( f.type == td.new_type_name )
+                  if ( remove_suffix(f.type) == td.new_type_name )
                      return true;
          for ( auto t : _abi.tables )
             if ( t.type == td.new_type_name )
                return true;
          for ( auto a : _abi.actions )
             if ( a.type == td.new_type_name )
+               return true;
+         for ( auto _td : _abi.typedefs )
+            if ( remove_suffix(_td.type) == td.new_type_name )
                return true;
          return false;
       };
