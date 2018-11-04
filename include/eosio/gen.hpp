@@ -37,6 +37,8 @@ struct generation_utils {
    }
    
    static inline clang::QualType get_ignored_type( const clang::QualType& type ) {
+      if ( !is_ignorable(type) )
+         return type;
       auto get = [&](const clang::Type* pt) {
          if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt))
             if (auto decl = llvm::dyn_cast<clang::RecordType>(tst->desugar()))
@@ -88,16 +90,18 @@ struct generation_utils {
                   return true;
                } else {
                   for ( auto name : names )
-                     if ( rt->getDecl()->getName().str() == name )
+                     if ( rt->getDecl()->getName().str() == name ) {
                         return true;
+                     }
                }
             }
          }
         return false;
       };
       bool is_specialization = false;
-      if (auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr()))
+      if (auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr())) {
          is_specialization = check(pt->desugar().getTypePtr());
+      }
       else
          is_specialization = check(type.getTypePtr());
 
@@ -198,6 +202,27 @@ struct generation_utils {
          return base_name;
       return ret;
    }
+   inline std::string replace_in_name( std::string name ) {
+      std::string ret = name;
+      std::replace(ret.begin(), ret.end(), '<', '_');
+      std::replace(ret.begin(), ret.end(), '>', '_');
+      std::replace(ret.begin(), ret.end(), ',', '_');
+      std::replace(ret.begin(), ret.end(), ' ', '_');
+      std::replace(ret.begin(), ret.end(), ':', '_');
+      return ret;
+   }
+
+   inline std::string get_template_name( const clang::QualType& type ) { 
+      auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr());
+      auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt->desugar().getTypePtr());
+      std::string ret = tst->getTemplateName().getAsTemplateDecl()->getName().str()+"_";
+      for (int i=0; i < tst->getNumArgs(); ++i) {
+         ret += _translate_type(get_template_argument( type, i ));
+         if ( i < tst->getNumArgs()-1 ) 
+            ret += "_";
+      }
+      return replace_in_name(ret);
+   }
 
    inline std::string translate_type( const clang::QualType& type ) {
       if ( is_template_specialization( type, {"vector", "set"} ) ) {
@@ -209,13 +234,34 @@ struct generation_utils {
       else if ( is_template_specialization( type, {"map"} )) {
          auto t0 = _translate_type(get_template_argument( type ));
          auto t1 = _translate_type(get_template_argument( type, 1));
-         std::string ret = "pair_" + t0 + "_" + t1 + "[]";
-         std::replace(ret.begin(), ret.end(), '<', '_');
-         std::replace(ret.begin(), ret.end(), '>', '_');
-         std::replace(ret.begin(), ret.end(), ',', '_');
-         std::replace(ret.begin(), ret.end(), ' ', '_');
-         std::replace(ret.begin(), ret.end(), ':', '_');
-         return ret;
+         return replace_in_name("pair_" + t0 + "_" + t1 + "[]");
+      }
+      else if ( is_template_specialization( type, {"pair"} )) {
+         auto t0 = _translate_type(get_template_argument( type ));
+         auto t1 = _translate_type(get_template_argument( type, 1));
+         return replace_in_name("pair_" + t0 + "_" + t1);
+      }
+      else if ( is_template_specialization( type, {"tuple"} )) {
+         auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr());
+         auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt->desugar().getTypePtr());
+         std::string ret = "tuple_";
+         for (int i=0; i < tst->getNumArgs(); ++i) {
+            ret += _translate_type(get_template_argument( type, i ));
+            if ( i < tst->getNumArgs()-1 ) 
+               ret += "_";
+         }
+         return replace_in_name(ret);
+      }
+      else if ( is_template_specialization( type, {} )) {
+         auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr());
+         auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt->desugar().getTypePtr());
+         std::string ret = tst->getTemplateName().getAsTemplateDecl()->getName().str()+"_";
+         for (int i=0; i < tst->getNumArgs(); ++i) {
+            ret += _translate_type(get_template_argument( type, i ));
+            if ( i < tst->getNumArgs()-1 ) 
+               ret += "_";
+         }
+         return replace_in_name(ret);
       }
       return _translate_type( type );
    }
@@ -277,22 +323,29 @@ struct generation_utils {
    
    inline bool is_builtin_type( const clang::QualType& t ) {
       std::string nt = translate_type(t);
-      return is_builtin_type(nt) || is_name_type(nt) || is_template_specialization(t, {"vector", "set", "map", "optional"});
+      return is_builtin_type(nt) || is_name_type(nt); // || is_template_specialization(t, {"optional"});
    } 
 
    inline bool is_cxx_record( const clang::QualType& t ) {
       return t.getTypePtr()->isRecordType();
    }
 
-
    inline std::string get_type( const clang::QualType& t ) {
       return translate_type(t); 
    }
 
-   inline std::string get_type_alias( const clang::QualType& t ) {
+   inline std::string get_type_alias_string( const clang::QualType& t ) {
       if (is_name_type(get_base_type_name(t)))
          return "name";
-      return get_type(clang::QualType(t).getCanonicalType());
+      if (auto dt = llvm::dyn_cast<clang::TypedefType>(t.getTypePtr()))
+         return get_type(dt->desugar());
+      return get_type(t);
+   }
+
+   inline std::vector<clang::QualType> get_type_alias( const clang::QualType& t ) {
+      if (auto dt = llvm::dyn_cast<clang::TypedefType>(t.getTypePtr()))
+         return {dt->desugar()};
+      return {};
    }
 
    inline bool is_aliasing( const clang::QualType& t ) {
@@ -301,7 +354,7 @@ struct generation_utils {
       if (is_name_type(get_base_type_name(t)))
          return true;
       if (get_base_type_name(t).find("<") != std::string::npos) return false;
-      return get_base_type_name(t).compare(get_type_alias(t)) != 0;
+      return get_base_type_name(t).compare(get_type_alias_string(t)) != 0;
    }
 };
 }} // ns eosio::cdt
