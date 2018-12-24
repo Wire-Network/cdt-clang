@@ -1295,7 +1295,7 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
                                    const CGFunctionInfo &FnInfo) {
   const FunctionDecl *FD = cast<FunctionDecl>(GD.getDecl());
   CurGD = GD;
-
+   
   FunctionArgList Args;
   QualType ResTy = BuildFunctionArgList(GD, Args);
 

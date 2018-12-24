@@ -1941,6 +1941,8 @@ public:
 
   void setRangeEnd(SourceLocation E) { EndRangeLoc = E; }
 
+  bool isEosioWasmImport()const;
+
   SourceRange getSourceRange() const override LLVM_READONLY;
 
   // Function definitions.

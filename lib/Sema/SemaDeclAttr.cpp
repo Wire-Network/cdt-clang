@@ -5869,6 +5869,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     S.Diag(AL.getLoc(), diag::err_stmt_attribute_invalid_on_decl)
         << AL.getName() << D->getLocation();
     break;
+  case AttributeList::AT_EosioWasmImport:
+    handleSimpleAttribute<EosioWasmImportAttr>(S, D, AL);
+    break;
   case AttributeList::AT_EosioIgnore:
     handleSimpleAttribute<EosioIgnoreAttr>(S, D, AL);
     break;

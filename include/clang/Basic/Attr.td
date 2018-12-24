@@ -949,6 +949,12 @@ def EosioContract : InheritableAttr {
    let Documentation = [EosioContractDocs];
 }
 
+def EosioWasmImport : InheritableAttr {
+   let Spellings = [CXX11<"eosio", "wasm_import">, GNU<"eosio_wasm_import">];
+   let Subjects = SubjectList<[Function]>;
+   let Documentation = [EosioWasmImportDocs];
+}
+
 def EosioAction : InheritableAttr {
    let Spellings = [CXX11<"eosio", "action">, GNU<"eosio_action">];
    let Args = [StringArgument<"name", 1>];
