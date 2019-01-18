@@ -19,7 +19,6 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Sema/Sema.h"
 #include "llvm/Support/raw_ostream.h"
-#include "eosio/gen.hpp"
 using namespace clang;
 
 namespace {
@@ -32,17 +31,34 @@ void emitError(CompilerInstance& inst, SourceLocation loc, const char (&err)[N])
 }
 
 class ValidateVisitor : public RecursiveASTVisitor<ValidateVisitor> {
+   static inline bool is_ignorable( const clang::QualType& type ) {
+      auto check = [&](const clang::Type* pt) {
+        if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt)) {
+         if (auto rt = llvm::dyn_cast<clang::RecordType>(tst->desugar()))
+            return rt->getDecl()->isEosioIgnore();
+        }
+
+         return false;
+      };
+
+      bool is_ignore = false;
+      if ( auto pt = llvm::dyn_cast<clang::ElaboratedType>(type.getTypePtr()) )
+         is_ignore = check(pt->desugar().getTypePtr());
+      else
+         is_ignore = check(type.getTypePtr());
+      return is_ignore;
+   }
+
    public:
       ValidateVisitor(CompilerInstance& inst) : instance(inst) {}
       bool VisitCXXMethodDecl(CXXMethodDecl* Decl) {
          bool invalid_params = false;
          for (auto param : Decl->parameters()) {
-            bool ignore = eosio::cdt::generation_utils::is_ignorable(param->getType().getNonReferenceType().getUnqualifiedType());
+            bool ignore = is_ignorable(param->getType().getNonReferenceType().getUnqualifiedType());
             if (invalid_params && !ignore)
                emitError(instance, param->getLocation(), "ignorable types cannot be preceded by non-ignorable types, this restriction will be relaxed in future versions");
             invalid_params |= ignore;
          }
-
          return true;
       }
    private:

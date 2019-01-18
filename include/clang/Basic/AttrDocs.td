@@ -859,10 +859,24 @@ The ``eosio::ignore`` attribute marks a template struct as an ignorable type.
   }];
 }
 
+def EosioRicardianDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``eosio::ricardian`` attribute specifies filename of ricardian contract.
+  }];
+}
+
 def EosioContractDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
 The ``eosio::contract`` attribute marks a method as being an eosio contract.
+  }];
+}
+
+def EosioWasmImportDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``eosio::wasm_import`` attribute marks a function as a wasm import.
   }];
 }
 

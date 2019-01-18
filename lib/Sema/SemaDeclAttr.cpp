@@ -387,6 +387,17 @@ bool Sema::checkStringLiteralArgumentAttr(const AttributeList &AL,
   return true;
 }
 
+static void handleEosioRicardianAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+  // Handle the cases where the attribute has a text message.
+  StringRef Str, Replacement;
+  if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
+      !S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+   D->addAttr(::new (S.Context)
+                 EosioRicardianAttr(AL.getRange(), S.Context, Str,
+                                AL.getAttributeSpellingListIndex()));
+}
+
 static void handleEosioContractAttribute(Sema &S, Decl *D, const AttributeList &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str, Replacement;
@@ -5858,6 +5869,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     S.Diag(AL.getLoc(), diag::err_stmt_attribute_invalid_on_decl)
         << AL.getName() << D->getLocation();
     break;
+  case AttributeList::AT_EosioWasmImport:
+    handleSimpleAttribute<EosioWasmImportAttr>(S, D, AL);
+    break;
   case AttributeList::AT_EosioIgnore:
     handleSimpleAttribute<EosioIgnoreAttr>(S, D, AL);
     break;
@@ -5869,6 +5883,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case AttributeList::AT_EosioContract:
     handleEosioContractAttribute(S, D, AL);
+    break;
+  case AttributeList::AT_EosioRicardian:
+    handleEosioRicardianAttribute(S, D, AL);
     break;
   case AttributeList::AT_Interrupt:
     handleInterruptAttr(S, D, AL);
