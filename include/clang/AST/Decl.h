@@ -1941,6 +1941,9 @@ public:
 
   void setRangeEnd(SourceLocation E) { EndRangeLoc = E; }
 
+  bool isEosioWasmABI()const;
+  std::string getWasmABI()const;
+  bool isEosioWasmEntry()const;
   bool isEosioWasmImport()const;
 
   SourceRange getSourceRange() const override LLVM_READONLY;
