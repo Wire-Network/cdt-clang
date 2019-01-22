@@ -1945,6 +1945,10 @@ public:
   std::string getWasmABI()const;
   bool isEosioWasmEntry()const;
   bool isEosioWasmImport()const;
+  bool isEosioWasmAction()const;
+  std::string getEosioWasmAction()const;
+  bool isEosioWasmNotify()const;
+  std::string getEosioWasmNotify()const;
 
   SourceRange getSourceRange() const override LLVM_READONLY;
 

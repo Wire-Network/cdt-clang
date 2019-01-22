@@ -2398,6 +2398,8 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
   bool isWasmImport = false;
   bool isWasmEntry  = false;
   bool isWasmABI    = false;
+  bool isWasmAction = false;
+  bool isWasmNotify = false;
 
   // Any attempts to use a MultiVersion function should result in retrieving
   // the iFunc instead. Name Mangling will handle the rest of the changes.
@@ -2408,6 +2410,10 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
         isWasmEntry = true;
      if (FD->hasAttr<EosioWasmABIAttr>())
         isWasmABI = true;
+     if (FD->hasAttr<EosioWasmActionAttr>())
+        isWasmAction = true;
+     if (FD->hasAttr<EosioWasmNotifyAttr>())
+        isWasmNotify = true;
 
 
 
@@ -2535,6 +2541,14 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
   if (isWasmABI)
      if (const FunctionDecl *FD = cast_or_null<FunctionDecl>(D)) {
         F->addFnAttr("eosio_wasm_abi", FD->getWasmABI().c_str());
+     }
+  if (isWasmAction)
+     if (const FunctionDecl *FD = cast_or_null<FunctionDecl>(D)) {
+        F->addFnAttr("eosio_wasm_action", FD->getEosioWasmAction().c_str());
+     }
+  if (isWasmNotify)
+     if (const FunctionDecl *FD = cast_or_null<FunctionDecl>(D)) {
+        F->addFnAttr("eosio_wasm_notify", FD->getEosioWasmNotify().c_str());
      }
 
   if (!DontDefer) {

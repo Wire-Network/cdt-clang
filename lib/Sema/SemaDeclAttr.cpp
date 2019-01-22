@@ -422,6 +422,29 @@ static void handleEosioABIAttribute(Sema &S, Decl *D, const AttributeList &AL) {
                                 AL.getAttributeSpellingListIndex()));
 }
 
+static void handleEosioWasmActionAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+  // Handle the cases where the attribute has a text message.
+  StringRef Str, Replacement;
+  if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
+      !S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+
+  D->addAttr(::new (S.Context)
+                 EosioWasmActionAttr(AL.getRange(), S.Context, Str,
+                                AL.getAttributeSpellingListIndex()));
+}
+
+static void handleEosioWasmNotifyAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+  // Handle the cases where the attribute has a text message.
+  StringRef Str, Replacement;
+  if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
+      !S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+
+  D->addAttr(::new (S.Context)
+                 EosioWasmNotifyAttr(AL.getRange(), S.Context, Str,
+                                AL.getAttributeSpellingListIndex()));
+}
 
 static void handleEosioActionAttribute(Sema &S, Decl *D, const AttributeList &AL) {
   // Handle the cases where the attribute has a text message.
@@ -5899,6 +5922,12 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case AttributeList::AT_EosioWasmABI:
     handleEosioABIAttribute(S, D, AL);
+    break;
+  case AttributeList::AT_EosioWasmAction:
+    handleEosioWasmActionAttribute(S, D, AL);
+    break;
+  case AttributeList::AT_EosioWasmNotify:
+    handleEosioWasmNotifyAttribute(S, D, AL);
     break;
   case AttributeList::AT_EosioContract:
     handleEosioContractAttribute(S, D, AL);
