@@ -398,6 +398,17 @@ static void handleEosioRicardianAttribute(Sema &S, Decl *D, const AttributeList 
                                 AL.getAttributeSpellingListIndex()));
 }
 
+static void handleEosioNotifyAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+  // Handle the cases where the attribute has a text message.
+  StringRef Str, Replacement;
+  if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
+      !S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+   D->addAttr(::new (S.Context)
+                 EosioNotifyAttr(AL.getRange(), S.Context, Str,
+                                AL.getAttributeSpellingListIndex()));
+}
+
 static void handleEosioContractAttribute(Sema &S, Decl *D, const AttributeList &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str, Replacement;
@@ -5934,6 +5945,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case AttributeList::AT_EosioRicardian:
     handleEosioRicardianAttribute(S, D, AL);
+    break;
+  case AttributeList::AT_EosioNotify:
+    handleEosioNotifyAttribute(S, D, AL);
     break;
   case AttributeList::AT_Interrupt:
     handleInterruptAttr(S, D, AL);

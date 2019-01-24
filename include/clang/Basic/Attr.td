@@ -931,7 +931,15 @@ def C11NoReturn : InheritableAttr {
 
 def EosioIgnore : InheritableAttr {
    let Spellings = [CXX11<"eosio", "ignore">, GNU<"eosio_ignore">];
+   let Args = [StringArgument<"name", 1>];
    let Subjects = SubjectList<[CXXRecord, Record]>;
+   let Documentation = [EosioIgnoreDocs];
+}
+
+def EosioNotify : InheritableAttr {
+   let Spellings = [CXX11<"eosio", "notify">, GNU<"eosio_notify">];
+   let Args = [StringArgument<"name">];
+   let Subjects = SubjectList<[CXXMethod]>;
    let Documentation = [EosioIgnoreDocs];
 }
 
