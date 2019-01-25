@@ -937,7 +937,7 @@ def EosioIgnore : InheritableAttr {
 }
 
 def EosioNotify : InheritableAttr {
-   let Spellings = [CXX11<"eosio", "notify">, GNU<"eosio_notify">];
+   let Spellings = [CXX11<"eosio", "on_notify">, GNU<"eosio_on_notify">];
    let Args = [StringArgument<"name">];
    let Subjects = SubjectList<[CXXMethod]>;
    let Documentation = [EosioIgnoreDocs];

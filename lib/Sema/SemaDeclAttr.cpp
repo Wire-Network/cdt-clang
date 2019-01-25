@@ -404,6 +404,7 @@ static void handleEosioNotifyAttribute(Sema &S, Decl *D, const AttributeList &AL
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
+   
    D->addAttr(::new (S.Context)
                  EosioNotifyAttr(AL.getRange(), S.Context, Str,
                                 AL.getAttributeSpellingListIndex()));
@@ -415,7 +416,6 @@ static void handleEosioContractAttribute(Sema &S, Decl *D, const AttributeList &
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
-
   D->addAttr(::new (S.Context)
                  EosioContractAttr(AL.getRange(), S.Context, Str,
                                 AL.getAttributeSpellingListIndex()));
