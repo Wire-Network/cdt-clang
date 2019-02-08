@@ -2068,9 +2068,11 @@ public:
   bool isStatic() const;
   bool isInstance() const { return !isStatic(); }
   bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
+  bool isEosioNotify() const { return hasAttr<EosioNotifyAttr>(); }
   bool isEosioContract() const { return hasAttr<EosioContractAttr>(); }
   bool hasEosioRicardian() const { return hasAttr<EosioRicardianAttr>(); }
   EosioActionAttr* getEosioActionAttr() const { return getAttr<EosioActionAttr>(); }
+  EosioNotifyAttr* getEosioNotifyAttr() const { return getAttr<EosioNotifyAttr>(); }
   EosioContractAttr* getEosioContractAttr() const { return getAttr<EosioContractAttr>(); }
   EosioRicardianAttr* getEosioRicardianAttr() const { return getAttr<EosioRicardianAttr>(); }
 
