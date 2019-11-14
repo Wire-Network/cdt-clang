@@ -1,9 +1,8 @@
 //===- ModuleManager.cpp - Module Manager -----------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -39,7 +38,7 @@ class FileEntry;
 class FileManager;
 class GlobalModuleIndex;
 class HeaderSearch;
-class MemoryBufferCache;
+class InMemoryModuleCache;
 class ModuleMap;
 class PCHContainerReader;
 
@@ -68,7 +67,7 @@ class ModuleManager {
   FileManager &FileMgr;
 
   /// Cache of PCM files.
-  IntrusiveRefCntPtr<MemoryBufferCache> PCMCache;
+  IntrusiveRefCntPtr<InMemoryModuleCache> ModuleCache;
 
   /// Knows how to unwrap module containers.
   const PCHContainerReader &PCHContainerRdr;
@@ -82,7 +81,7 @@ class ModuleManager {
 
   /// The visitation order.
   SmallVector<ModuleFile *, 4> VisitOrder;
-      
+
   /// The list of module files that both we and the global module index
   /// know about.
   ///
@@ -140,7 +139,7 @@ public:
       SmallVectorImpl<std::unique_ptr<ModuleFile>>::reverse_iterator>;
   using ModuleOffset = std::pair<uint32_t, StringRef>;
 
-  explicit ModuleManager(FileManager &FileMgr, MemoryBufferCache &PCMCache,
+  explicit ModuleManager(FileManager &FileMgr, InMemoryModuleCache &ModuleCache,
                          const PCHContainerReader &PCHContainerRdr,
                          const HeaderSearch &HeaderSearchInfo);
   ~ModuleManager();
@@ -150,13 +149,13 @@ public:
 
   /// Forward iterator end-point to traverse all loaded modules
   ModuleIterator end() { return Chain.end(); }
-  
+
   /// Const forward iterator to traverse all loaded modules.
   ModuleConstIterator begin() const { return Chain.begin(); }
 
   /// Const forward iterator end-point to traverse all loaded modules
   ModuleConstIterator end() const { return Chain.end(); }
-  
+
   /// Reverse iterator to traverse all loaded modules.
   ModuleReverseIterator rbegin() { return Chain.rbegin(); }
 
@@ -172,14 +171,14 @@ public:
   /// Returns the primary module associated with the manager, that is,
   /// the first module loaded
   ModuleFile &getPrimaryModule() { return *Chain[0]; }
-  
+
   /// Returns the primary module associated with the manager, that is,
   /// the first module loaded.
   ModuleFile &getPrimaryModule() const { return *Chain[0]; }
-  
+
   /// Returns the module associated with the given index
   ModuleFile &operator[](unsigned Index) const { return *Chain[Index]; }
-  
+
   /// Returns the module associated with the given file name.
   ModuleFile *lookupByFileName(StringRef FileName) const;
 
@@ -191,7 +190,7 @@ public:
 
   /// Returns the in-memory (virtual file) buffer with the given name
   std::unique_ptr<llvm::MemoryBuffer> lookupBuffer(StringRef Name);
-  
+
   /// Number of modules loaded
   unsigned size() const { return Chain.size(); }
 
@@ -318,7 +317,7 @@ public:
   /// View the graphviz representation of the module graph.
   void viewGraph();
 
-  MemoryBufferCache &getPCMCache() const { return *PCMCache; }
+  InMemoryModuleCache &getModuleCache() const { return *ModuleCache; }
 };
 
 } // namespace serialization

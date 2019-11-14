@@ -1,9 +1,8 @@
-//===- unittest/Format/FormatTestProto.cpp --------------------------------===//
+//===- unittest/Format/FormatTestTextProto.cpp ----------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -698,6 +697,41 @@ TEST_F(FormatTestTextProto, PreventBreaksBetweenKeyAndSubmessages) {
       "submessageeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee: {\n"
       "  key: 'aaaaa'\n"
       "}");
+}
+
+TEST_F(FormatTestTextProto, FormatsCommentsAtEndOfFile) {
+  verifyFormat("key: value\n"
+               "# endfile comment");
+  verifyFormat("key: value\n"
+               "// endfile comment");
+  verifyFormat("key: value\n"
+               "// endfile comment 1\n"
+               "// endfile comment 2");
+  verifyFormat("submessage { key: value }\n"
+               "# endfile comment");
+  verifyFormat("submessage <\n"
+               "  key: value\n"
+               "  item {}\n"
+               ">\n"
+               "# endfile comment");
+}
+
+TEST_F(FormatTestTextProto, KeepsAmpersandsNextToKeys) {
+  verifyFormat("@tmpl { field: 1 }");
+  verifyFormat("@placeholder: 1");
+  verifyFormat("@name <>");
+  verifyFormat("submessage: @base { key: value }");
+  verifyFormat("submessage: @base {\n"
+               "  key: value\n"
+               "  item: {}\n"
+               "}");
+  verifyFormat("submessage: {\n"
+               "  msg: @base {\n"
+               "    yolo: {}\n"
+               "    key: value\n"
+               "  }\n"
+               "  key: value\n"
+               "}");
 }
 
 } // end namespace tooling

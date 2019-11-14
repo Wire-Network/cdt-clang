@@ -1,9 +1,8 @@
 //===------ unittest/AST/Language.h - AST unit test support ---------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -22,7 +21,6 @@ namespace clang {
 namespace ast_matchers {
 
 typedef std::vector<std::string> ArgVector;
-typedef std::vector<ArgVector> RunOptions;
 
 enum Language {
     Lang_C,
@@ -30,16 +28,12 @@ enum Language {
     Lang_CXX,
     Lang_CXX11,
     Lang_CXX14,
+    Lang_CXX2a,
     Lang_OpenCL,
     Lang_OBJCXX
 };
 
-inline bool isCXX(Language Lang) {
-  return Lang == Lang_CXX || Lang == Lang_CXX11 || Lang == Lang_CXX14;
-}
-
 ArgVector getBasicRunOptionsForLanguage(Language Lang);
-RunOptions getRunOptionsForLanguage(Language Lang);
 
 } // end namespace ast_matchers
 } // end namespace clang

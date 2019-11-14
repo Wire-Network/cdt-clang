@@ -1,9 +1,8 @@
 //===--- FreeBSD.cpp - FreeBSD ToolChain Implementations --------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -12,11 +11,11 @@
 #include "Arch/Mips.h"
 #include "Arch/Sparc.h"
 #include "CommonArgs.h"
-#include "clang/Basic/VirtualFileSystem.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Options.h"
 #include "clang/Driver/SanitizerArgs.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Support/VirtualFileSystem.h"
 
 using namespace clang::driver;
 using namespace clang::driver::tools;
@@ -57,11 +56,10 @@ void freebsd::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-mabi");
     CmdArgs.push_back(mips::getGnuCompatibleMipsABIName(ABIName).data());
 
-    if (getToolChain().getArch() == llvm::Triple::mips ||
-        getToolChain().getArch() == llvm::Triple::mips64)
-      CmdArgs.push_back("-EB");
-    else
+    if (getToolChain().getTriple().isLittleEndian())
       CmdArgs.push_back("-EL");
+    else
+      CmdArgs.push_back("-EB");
 
     if (Arg *A = Args.getLastArg(options::OPT_G)) {
       StringRef v = A->getValue();
@@ -166,23 +164,45 @@ void freebsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("--enable-new-dtags");
   }
 
-  // When building 32-bit code on FreeBSD/amd64, we have to explicitly
-  // instruct ld in the base system to link 32-bit code.
-  if (Arch == llvm::Triple::x86) {
+  // Explicitly set the linker emulation for platforms that might not
+  // be the default emulation for the linker.
+  switch (Arch) {
+  case llvm::Triple::x86:
     CmdArgs.push_back("-m");
     CmdArgs.push_back("elf_i386_fbsd");
-  }
-
-  if (Arch == llvm::Triple::ppc) {
+    break;
+  case llvm::Triple::ppc:
     CmdArgs.push_back("-m");
     CmdArgs.push_back("elf32ppc_fbsd");
+    break;
+  case llvm::Triple::mips:
+    CmdArgs.push_back("-m");
+    CmdArgs.push_back("elf32btsmip_fbsd");
+    break;
+  case llvm::Triple::mipsel:
+    CmdArgs.push_back("-m");
+    CmdArgs.push_back("elf32ltsmip_fbsd");
+    break;
+  case llvm::Triple::mips64:
+    CmdArgs.push_back("-m");
+    if (tools::mips::hasMipsAbiArg(Args, "n32"))
+      CmdArgs.push_back("elf32btsmipn32_fbsd");
+    else
+      CmdArgs.push_back("elf64btsmip_fbsd");
+    break;
+  case llvm::Triple::mips64el:
+    CmdArgs.push_back("-m");
+    if (tools::mips::hasMipsAbiArg(Args, "n32"))
+      CmdArgs.push_back("elf32ltsmipn32_fbsd");
+    else
+      CmdArgs.push_back("elf64ltsmip_fbsd");
+    break;
+  default:
+    break;
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_G)) {
-    if (ToolChain.getArch() == llvm::Triple::mips ||
-      ToolChain.getArch() == llvm::Triple::mipsel ||
-      ToolChain.getArch() == llvm::Triple::mips64 ||
-      ToolChain.getArch() == llvm::Triple::mips64el) {
+    if (ToolChain.getTriple().isMIPS()) {
       StringRef v = A->getValue();
       CmdArgs.push_back(Args.MakeArgString("-G" + v));
       A->claim();
@@ -322,9 +342,7 @@ FreeBSD::FreeBSD(const Driver &D, const llvm::Triple &Triple,
 
   // When targeting 32-bit platforms, look for '/usr/lib32/crt1.o' and fall
   // back to '/usr/lib' if it doesn't exist.
-  if ((Triple.getArch() == llvm::Triple::x86 ||
-       Triple.getArch() == llvm::Triple::mips ||
-       Triple.getArch() == llvm::Triple::mipsel ||
+  if ((Triple.getArch() == llvm::Triple::x86 || Triple.isMIPS32() ||
        Triple.getArch() == llvm::Triple::ppc) &&
       D.getVFS().exists(getDriver().SysRoot + "/usr/lib32/crt1.o"))
     getFilePaths().push_back(getDriver().SysRoot + "/usr/lib32");
@@ -389,10 +407,11 @@ bool FreeBSD::isPIEDefault() const { return getSanitizerArgs().requiresPIE(); }
 SanitizerMask FreeBSD::getSupportedSanitizers() const {
   const bool IsX86 = getTriple().getArch() == llvm::Triple::x86;
   const bool IsX86_64 = getTriple().getArch() == llvm::Triple::x86_64;
-  const bool IsMIPS64 = getTriple().getArch() == llvm::Triple::mips64 ||
-                        getTriple().getArch() == llvm::Triple::mips64el;
+  const bool IsMIPS64 = getTriple().isMIPS64();
   SanitizerMask Res = ToolChain::getSupportedSanitizers();
   Res |= SanitizerKind::Address;
+  Res |= SanitizerKind::PointerCompare;
+  Res |= SanitizerKind::PointerSubtract;
   Res |= SanitizerKind::Vptr;
   if (IsX86_64 || IsMIPS64) {
     Res |= SanitizerKind::Leak;

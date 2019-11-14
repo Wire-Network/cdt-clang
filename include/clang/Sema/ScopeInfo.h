@@ -1,9 +1,8 @@
 //===- ScopeInfo.h - Information about a semantic context -------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -16,6 +15,7 @@
 #define LLVM_CLANG_SEMA_SCOPEINFO_H
 
 #include "clang/AST/Expr.h"
+#include "clang/AST/ExprCXX.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/CapturedStmt.h"
 #include "clang/Basic/LLVM.h"
@@ -31,6 +31,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <algorithm>
@@ -84,13 +85,13 @@ class PossiblyUnreachableDiag {
 public:
   PartialDiagnostic PD;
   SourceLocation Loc;
-  const Stmt *stmt;
-  
+  llvm::TinyPtrVector<const Stmt*> Stmts;
+
   PossiblyUnreachableDiag(const PartialDiagnostic &PD, SourceLocation Loc,
-                          const Stmt *stmt)
-      : PD(PD), Loc(Loc), stmt(stmt) {}
+                          ArrayRef<const Stmt *> Stmts)
+      : PD(PD), Loc(Loc), Stmts(Stmts) {}
 };
-    
+
 /// Retains information about a function, method, or block that is
 /// currently being parsed.
 class FunctionScopeInfo {
@@ -101,7 +102,7 @@ protected:
     SK_Lambda,
     SK_CapturedRegion
   };
-  
+
 public:
   /// What kind of scope we are describing.
   ScopeKind Kind : 3;
@@ -175,9 +176,13 @@ public:
   /// Used to determine if errors occurred in this function or block.
   DiagnosticErrorTrap ErrorTrap;
 
+  /// A SwitchStmt, along with a flag indicating if its list of case statements
+  /// is incomplete (because we dropped an invalid one while parsing).
+  using SwitchInfo = llvm::PointerIntPair<SwitchStmt*, 1, bool>;
+
   /// SwitchStack - This is the current set of active switch statements in the
   /// block.
-  SmallVector<SwitchStmt*, 8> SwitchStack;
+  SmallVector<SwitchInfo, 8> SwitchStack;
 
   /// The list of return statements that occur within the function or
   /// block, if there is any chance of applying the named return value
@@ -198,11 +203,17 @@ public:
   /// function.
   SmallVector<CompoundScopeInfo, 4> CompoundScopes;
 
+  /// The set of blocks that are introduced in this function.
+  llvm::SmallPtrSet<const BlockDecl *, 1> Blocks;
+
+  /// The set of __block variables that are introduced in this function.
+  llvm::TinyPtrVector<VarDecl *> ByrefBlockVars;
+
   /// A list of PartialDiagnostics created but delayed within the
   /// current function scope.  These diagnostics are vetted for reachability
   /// prior to being emitted.
   SmallVector<PossiblyUnreachableDiag, 4> PossiblyUnreachableDiags;
-  
+
   /// A list of parameters which have the nonnull attribute and are
   /// modified in the function.
   llvm::SmallPtrSet<const ParmVarDecl *, 8> ModifiedNonNullParams;
@@ -422,6 +433,16 @@ public:
           (HasBranchProtectedScope && HasBranchIntoScope));
   }
 
+  // Add a block introduced in this function.
+  void addBlock(const BlockDecl *BD) {
+    Blocks.insert(BD);
+  }
+
+  // Add a __block variable introduced in this function.
+  void addByrefBlockVar(VarDecl *VD) {
+    ByrefBlockVars.push_back(VD);
+  }
+
   bool isCoroutine() const { return !FirstCoroutineStmtLoc.isInvalid(); }
 
   void setFirstCoroutineStmt(SourceLocation Loc, StringRef Keyword) {
@@ -467,6 +488,8 @@ public:
   /// Clear out the information in this function scope, making it
   /// suitable for reuse.
   void Clear();
+
+  bool isPlainFunction() const { return Kind == SK_Function; }
 };
 
 class Capture {
@@ -486,20 +509,14 @@ class Capture {
   enum CaptureKind {
     Cap_ByCopy, Cap_ByRef, Cap_Block, Cap_VLA
   };
-  enum {
-    IsNestedCapture = 0x1,
-    IsThisCaptured = 0x2
+
+  union {
+    /// If Kind == Cap_VLA, the captured type.
+    const VariableArrayType *CapturedVLA;
+
+    /// Otherwise, the captured variable (if any).
+    VarDecl *CapturedVar;
   };
-
-  /// The variable being captured (if we are not capturing 'this') and whether
-  /// this is a nested capture, and whether we are capturing 'this'
-  llvm::PointerIntPair<VarDecl*, 2> VarAndNestedAndThis;
-
-  /// Expression to initialize a field of the given type, and the kind of
-  /// capture (if this is a capture and not an init-capture). The expression
-  /// is only required if we are capturing ByVal and the variable's type has
-  /// a non-trivial copy constructor.
-  llvm::PointerIntPair<void *, 2, CaptureKind> InitExprAndCaptureKind;
 
   /// The source location at which the first capture occurred.
   SourceLocation Loc;
@@ -507,71 +524,91 @@ class Capture {
   /// The location of the ellipsis that expands a parameter pack.
   SourceLocation EllipsisLoc;
 
-  /// The type as it was captured, which is in effect the type of the
-  /// non-static data member that would hold the capture.
+  /// The type as it was captured, which is the type of the non-static data
+  /// member that would hold the capture.
   QualType CaptureType;
+
+  /// The CaptureKind of this capture.
+  unsigned Kind : 2;
+
+  /// Whether this is a nested capture (a capture of an enclosing capturing
+  /// scope's capture).
+  unsigned Nested : 1;
+
+  /// Whether this is a capture of '*this'.
+  unsigned CapturesThis : 1;
 
   /// Whether an explicit capture has been odr-used in the body of the
   /// lambda.
-  bool ODRUsed = false;
+  unsigned ODRUsed : 1;
 
   /// Whether an explicit capture has been non-odr-used in the body of
   /// the lambda.
-  bool NonODRUsed = false;
+  unsigned NonODRUsed : 1;
+
+  /// Whether the capture is invalid (a capture was required but the entity is
+  /// non-capturable).
+  unsigned Invalid : 1;
 
 public:
   Capture(VarDecl *Var, bool Block, bool ByRef, bool IsNested,
-          SourceLocation Loc, SourceLocation EllipsisLoc,
-          QualType CaptureType, Expr *Cpy)
-      : VarAndNestedAndThis(Var, IsNested ? IsNestedCapture : 0),
-        InitExprAndCaptureKind(
-            Cpy, !Var ? Cap_VLA : Block ? Cap_Block : ByRef ? Cap_ByRef
-                                                            : Cap_ByCopy),
-        Loc(Loc), EllipsisLoc(EllipsisLoc), CaptureType(CaptureType) {}
+          SourceLocation Loc, SourceLocation EllipsisLoc, QualType CaptureType,
+          bool Invalid)
+      : CapturedVar(Var), Loc(Loc), EllipsisLoc(EllipsisLoc),
+        CaptureType(CaptureType),
+        Kind(Block ? Cap_Block : ByRef ? Cap_ByRef : Cap_ByCopy),
+        Nested(IsNested), CapturesThis(false), ODRUsed(false),
+        NonODRUsed(false), Invalid(Invalid) {}
 
   enum IsThisCapture { ThisCapture };
   Capture(IsThisCapture, bool IsNested, SourceLocation Loc,
-          QualType CaptureType, Expr *Cpy, const bool ByCopy)
-      : VarAndNestedAndThis(
-            nullptr, (IsThisCaptured | (IsNested ? IsNestedCapture : 0))),
-        InitExprAndCaptureKind(Cpy, ByCopy ? Cap_ByCopy : Cap_ByRef),
-        Loc(Loc), CaptureType(CaptureType) {}
+          QualType CaptureType, const bool ByCopy, bool Invalid)
+      : Loc(Loc), CaptureType(CaptureType),
+        Kind(ByCopy ? Cap_ByCopy : Cap_ByRef), Nested(IsNested),
+        CapturesThis(true), ODRUsed(false), NonODRUsed(false),
+        Invalid(Invalid) {}
 
-  bool isThisCapture() const {
-    return VarAndNestedAndThis.getInt() & IsThisCaptured;
-  }
+  enum IsVLACapture { VLACapture };
+  Capture(IsVLACapture, const VariableArrayType *VLA, bool IsNested,
+          SourceLocation Loc, QualType CaptureType)
+      : CapturedVLA(VLA), Loc(Loc), CaptureType(CaptureType), Kind(Cap_VLA),
+        Nested(IsNested), CapturesThis(false), ODRUsed(false),
+        NonODRUsed(false), Invalid(false) {}
 
+  bool isThisCapture() const { return CapturesThis; }
   bool isVariableCapture() const {
     return !isThisCapture() && !isVLATypeCapture();
   }
 
-  bool isCopyCapture() const {
-    return InitExprAndCaptureKind.getInt() == Cap_ByCopy;
-  }
+  bool isCopyCapture() const { return Kind == Cap_ByCopy; }
+  bool isReferenceCapture() const { return Kind == Cap_ByRef; }
+  bool isBlockCapture() const { return Kind == Cap_Block; }
+  bool isVLATypeCapture() const { return Kind == Cap_VLA; }
 
-  bool isReferenceCapture() const {
-    return InitExprAndCaptureKind.getInt() == Cap_ByRef;
-  }
+  bool isNested() const { return Nested; }
 
-  bool isBlockCapture() const {
-    return InitExprAndCaptureKind.getInt() == Cap_Block;
-  }
+  bool isInvalid() const { return Invalid; }
 
-  bool isVLATypeCapture() const {
-    return InitExprAndCaptureKind.getInt() == Cap_VLA;
-  }
-
-  bool isNested() const {
-    return VarAndNestedAndThis.getInt() & IsNestedCapture;
-  }
+  /// Determine whether this capture is an init-capture.
+  bool isInitCapture() const;
 
   bool isODRUsed() const { return ODRUsed; }
   bool isNonODRUsed() const { return NonODRUsed; }
-  void markUsed(bool IsODRUse) { (IsODRUse ? ODRUsed : NonODRUsed) = true; }
+  void markUsed(bool IsODRUse) {
+    if (IsODRUse)
+      ODRUsed = true;
+    else
+      NonODRUsed = true;
+  }
 
   VarDecl *getVariable() const {
     assert(isVariableCapture());
-    return VarAndNestedAndThis.getPointer();
+    return CapturedVar;
+  }
+
+  const VariableArrayType *getCapturedVLAType() const {
+    assert(isVLATypeCapture());
+    return CapturedVLA;
   }
 
   /// Retrieve the location at which this variable was captured.
@@ -584,15 +621,7 @@ public:
   /// Retrieve the capture type for this capture, which is effectively
   /// the type of the non-static data member in the lambda/block structure
   /// that would store this capture.
-  QualType getCaptureType() const {
-    assert(!isThisCapture());
-    return CaptureType;
-  }
-
-  Expr *getInitExpr() const {
-    assert(!isVLATypeCapture() && "no init expression for type capture");
-    return static_cast<Expr *>(InitExprAndCaptureKind.getPointer());
-  }
+  QualType getCaptureType() const { return CaptureType; }
 };
 
 class CapturingScopeInfo : public FunctionScopeInfo {
@@ -629,35 +658,31 @@ public:
   QualType ReturnType;
 
   void addCapture(VarDecl *Var, bool isBlock, bool isByref, bool isNested,
-                  SourceLocation Loc, SourceLocation EllipsisLoc, 
-                  QualType CaptureType, Expr *Cpy) {
-    Captures.push_back(Capture(Var, isBlock, isByref, isNested, Loc, 
-                               EllipsisLoc, CaptureType, Cpy));
+                  SourceLocation Loc, SourceLocation EllipsisLoc,
+                  QualType CaptureType, bool Invalid) {
+    Captures.push_back(Capture(Var, isBlock, isByref, isNested, Loc,
+                               EllipsisLoc, CaptureType, Invalid));
     CaptureMap[Var] = Captures.size();
   }
 
-  void addVLATypeCapture(SourceLocation Loc, QualType CaptureType) {
-    Captures.push_back(Capture(/*Var*/ nullptr, /*isBlock*/ false,
-                               /*isByref*/ false, /*isNested*/ false, Loc,
-                               /*EllipsisLoc*/ SourceLocation(), CaptureType,
-                               /*Cpy*/ nullptr));
+  void addVLATypeCapture(SourceLocation Loc, const VariableArrayType *VLAType,
+                         QualType CaptureType) {
+    Captures.push_back(Capture(Capture::VLACapture, VLAType,
+                               /*FIXME: IsNested*/ false, Loc, CaptureType));
   }
 
-  // Note, we do not need to add the type of 'this' since that is always
-  // retrievable from Sema::getCurrentThisType - and is also encoded within the
-  // type of the corresponding FieldDecl.
-  void addThisCapture(bool isNested, SourceLocation Loc,
-                      Expr *Cpy, bool ByCopy);
+  void addThisCapture(bool isNested, SourceLocation Loc, QualType CaptureType,
+                      bool ByCopy);
 
   /// Determine whether the C++ 'this' is captured.
   bool isCXXThisCaptured() const { return CXXThisCaptureIndex != 0; }
-  
+
   /// Retrieve the capture of C++ 'this', if it has been captured.
   Capture &getCXXThisCapture() {
     assert(isCXXThisCaptured() && "this has not been captured");
     return Captures[CXXThisCaptureIndex - 1];
   }
-  
+
   /// Determine whether the given variable has been captured.
   bool isCaptured(VarDecl *Var) const {
     return CaptureMap.count(Var);
@@ -680,7 +705,7 @@ public:
     return Captures[Known->second - 1];
   }
 
-  static bool classof(const FunctionScopeInfo *FSI) { 
+  static bool classof(const FunctionScopeInfo *FSI) {
     return FSI->Kind == SK_Block || FSI->Kind == SK_Lambda
                                  || FSI->Kind == SK_CapturedRegion;
   }
@@ -690,7 +715,7 @@ public:
 class BlockScopeInfo final : public CapturingScopeInfo {
 public:
   BlockDecl *TheDecl;
-  
+
   /// TheScope - This is the scope for the block itself, which contains
   /// arguments etc.
   Scope *TheScope;
@@ -707,8 +732,8 @@ public:
 
   ~BlockScopeInfo() override;
 
-  static bool classof(const FunctionScopeInfo *FSI) { 
-    return FSI->Kind == SK_Block; 
+  static bool classof(const FunctionScopeInfo *FSI) {
+    return FSI->Kind == SK_Block;
   }
 };
 
@@ -792,34 +817,42 @@ public:
   /// Whether the lambda contains an unexpanded parameter pack.
   bool ContainsUnexpandedParameterPack = false;
 
-  /// If this is a generic lambda, use this as the depth of 
+  /// If this is a generic lambda, use this as the depth of
   /// each 'auto' parameter, during initial AST construction.
   unsigned AutoTemplateParameterDepth = 0;
 
-  /// Store the list of the auto parameters for a generic lambda.
-  /// If this is a generic lambda, store the list of the auto 
-  /// parameters converted into TemplateTypeParmDecls into a vector
-  /// that can be used to construct the generic lambda's template
-  /// parameter list, during initial AST construction.
-  SmallVector<TemplateTypeParmDecl*, 4> AutoTemplateParams;
+  /// The number of parameters in the template parameter list that were
+  /// explicitly specified by the user, as opposed to being invented by use
+  /// of an auto parameter.
+  unsigned NumExplicitTemplateParams = 0;
+
+  /// Source range covering the explicit template parameter list (if it exists).
+  SourceRange ExplicitTemplateParamsRange;
+
+  /// Store the list of the template parameters for a generic lambda.
+  /// If this is a generic lambda, this holds the explicit template parameters
+  /// followed by the auto parameters converted into TemplateTypeParmDecls.
+  /// It can be used to construct the generic lambda's template parameter list
+  /// during initial AST construction.
+  SmallVector<NamedDecl*, 4> TemplateParams;
 
   /// If this is a generic lambda, and the template parameter
-  /// list has been created (from the AutoTemplateParams) then
-  /// store a reference to it (cache it to avoid reconstructing it).
+  /// list has been created (from the TemplateParams) then store
+  /// a reference to it (cache it to avoid reconstructing it).
   TemplateParameterList *GLTemplateParameterList = nullptr;
-  
+
   /// Contains all variable-referring-expressions (i.e. DeclRefExprs
   ///  or MemberExprs) that refer to local variables in a generic lambda
   ///  or a lambda in a potentially-evaluated-if-used context.
-  ///  
-  ///  Potentially capturable variables of a nested lambda that might need 
-  ///   to be captured by the lambda are housed here.  
+  ///
+  ///  Potentially capturable variables of a nested lambda that might need
+  ///   to be captured by the lambda are housed here.
   ///  This is specifically useful for generic lambdas or
   ///  lambdas within a potentially evaluated-if-used context.
   ///  If an enclosing variable is named in an expression of a lambda nested
-  ///  within a generic lambda, we don't always know know whether the variable 
+  ///  within a generic lambda, we don't always know know whether the variable
   ///  will truly be odr-used (i.e. need to be captured) by that nested lambda,
-  ///  until its instantiation. But we still need to capture it in the 
+  ///  until its instantiation. But we still need to capture it in the
   ///  enclosing lambda if all intervening lambdas can capture the variable.
   llvm::SmallVector<Expr*, 4> PotentiallyCapturingExprs;
 
@@ -828,6 +861,9 @@ public:
   ///  do not involve an odr-use (they may still need to be captured
   ///  if the enclosing full-expression is instantiation dependent).
   llvm::SmallSet<Expr *, 8> NonODRUsedCapturingExprs;
+
+  /// A map of explicit capture indices to their introducer source ranges.
+  llvm::DenseMap<unsigned, SourceRange> ExplicitCaptureRanges;
 
   /// Contains all of the variables defined in this lambda that shadow variables
   /// that were defined in parent contexts. Used to avoid warnings when the
@@ -855,15 +891,15 @@ public:
   }
 
   /// Is this scope known to be for a generic lambda? (This will be false until
-  /// we parse the first 'auto'-typed parameter.
+  /// we parse a template parameter list or the first 'auto'-typed parameter).
   bool isGenericLambda() const {
-    return !AutoTemplateParams.empty() || GLTemplateParameterList;
+    return !TemplateParams.empty() || GLTemplateParameterList;
   }
 
-  /// Add a variable that might potentially be captured by the 
-  /// lambda and therefore the enclosing lambdas. 
-  /// 
-  /// This is also used by enclosing lambda's to speculatively capture 
+  /// Add a variable that might potentially be captured by the
+  /// lambda and therefore the enclosing lambdas.
+  ///
+  /// This is also used by enclosing lambda's to speculatively capture
   /// variables that nested lambda's - depending on their enclosing
   /// specialization - might need to capture.
   /// Consider:
@@ -872,55 +908,56 @@ public:
   /// void foo() {
   ///   const int x = 10;
   ///   auto L = [=](auto a) { // capture 'x'
-  ///      return [=](auto b) { 
+  ///      return [=](auto b) {
   ///        f(x, a);  // we may or may not need to capture 'x'
   ///      };
   ///   };
   /// }
   void addPotentialCapture(Expr *VarExpr) {
-    assert(isa<DeclRefExpr>(VarExpr) || isa<MemberExpr>(VarExpr));
+    assert(isa<DeclRefExpr>(VarExpr) || isa<MemberExpr>(VarExpr) ||
+           isa<FunctionParmPackExpr>(VarExpr));
     PotentiallyCapturingExprs.push_back(VarExpr);
   }
-  
+
   void addPotentialThisCapture(SourceLocation Loc) {
     PotentialThisCaptureLocation = Loc;
   }
 
-  bool hasPotentialThisCapture() const { 
-    return PotentialThisCaptureLocation.isValid(); 
+  bool hasPotentialThisCapture() const {
+    return PotentialThisCaptureLocation.isValid();
   }
 
   /// Mark a variable's reference in a lambda as non-odr using.
   ///
-  /// For generic lambdas, if a variable is named in a potentially evaluated 
-  /// expression, where the enclosing full expression is dependent then we 
+  /// For generic lambdas, if a variable is named in a potentially evaluated
+  /// expression, where the enclosing full expression is dependent then we
   /// must capture the variable (given a default capture).
-  /// This is accomplished by recording all references to variables 
-  /// (DeclRefExprs or MemberExprs) within said nested lambda in its array of 
+  /// This is accomplished by recording all references to variables
+  /// (DeclRefExprs or MemberExprs) within said nested lambda in its array of
   /// PotentialCaptures. All such variables have to be captured by that lambda,
   /// except for as described below.
-  /// If that variable is usable as a constant expression and is named in a 
-  /// manner that does not involve its odr-use (e.g. undergoes 
+  /// If that variable is usable as a constant expression and is named in a
+  /// manner that does not involve its odr-use (e.g. undergoes
   /// lvalue-to-rvalue conversion, or discarded) record that it is so. Upon the
   /// act of analyzing the enclosing full expression (ActOnFinishFullExpr)
   /// if we can determine that the full expression is not instantiation-
-  /// dependent, then we can entirely avoid its capture. 
+  /// dependent, then we can entirely avoid its capture.
   ///
   ///   const int n = 0;
   ///   [&] (auto x) {
   ///     (void)+n + x;
   ///   };
-  /// Interestingly, this strategy would involve a capture of n, even though 
-  /// it's obviously not odr-used here, because the full-expression is 
+  /// Interestingly, this strategy would involve a capture of n, even though
+  /// it's obviously not odr-used here, because the full-expression is
   /// instantiation-dependent.  It could be useful to avoid capturing such
   /// variables, even when they are referred to in an instantiation-dependent
   /// expression, if we can unambiguously determine that they shall never be
   /// odr-used.  This would involve removal of the variable-referring-expression
-  /// from the array of PotentialCaptures during the lvalue-to-rvalue 
+  /// from the array of PotentialCaptures during the lvalue-to-rvalue
   /// conversions.  But per the working draft N3797, (post-chicago 2013) we must
-  /// capture such variables. 
+  /// capture such variables.
   /// Before anyone is tempted to implement a strategy for not-capturing 'n',
-  /// consider the insightful warning in: 
+  /// consider the insightful warning in:
   ///    /cfe-commits/Week-of-Mon-20131104/092596.html
   /// "The problem is that the set of captures for a lambda is part of the ABI
   ///  (since lambda layout can be made visible through inline functions and the
@@ -930,37 +967,38 @@ public:
   ///  building such a node. So we need a rule that anyone can implement and get
   ///  exactly the same result".
   void markVariableExprAsNonODRUsed(Expr *CapturingVarExpr) {
-    assert(isa<DeclRefExpr>(CapturingVarExpr) 
-        || isa<MemberExpr>(CapturingVarExpr));
+    assert(isa<DeclRefExpr>(CapturingVarExpr) ||
+           isa<MemberExpr>(CapturingVarExpr) ||
+           isa<FunctionParmPackExpr>(CapturingVarExpr));
     NonODRUsedCapturingExprs.insert(CapturingVarExpr);
   }
   bool isVariableExprMarkedAsNonODRUsed(Expr *CapturingVarExpr) const {
-    assert(isa<DeclRefExpr>(CapturingVarExpr) 
-      || isa<MemberExpr>(CapturingVarExpr));
+    assert(isa<DeclRefExpr>(CapturingVarExpr) ||
+           isa<MemberExpr>(CapturingVarExpr) ||
+           isa<FunctionParmPackExpr>(CapturingVarExpr));
     return NonODRUsedCapturingExprs.count(CapturingVarExpr);
   }
   void removePotentialCapture(Expr *E) {
     PotentiallyCapturingExprs.erase(
-        std::remove(PotentiallyCapturingExprs.begin(), 
-            PotentiallyCapturingExprs.end(), E), 
+        std::remove(PotentiallyCapturingExprs.begin(),
+            PotentiallyCapturingExprs.end(), E),
         PotentiallyCapturingExprs.end());
   }
   void clearPotentialCaptures() {
     PotentiallyCapturingExprs.clear();
     PotentialThisCaptureLocation = SourceLocation();
   }
-  unsigned getNumPotentialVariableCaptures() const { 
-    return PotentiallyCapturingExprs.size(); 
+  unsigned getNumPotentialVariableCaptures() const {
+    return PotentiallyCapturingExprs.size();
   }
 
-  bool hasPotentialCaptures() const { 
-    return getNumPotentialVariableCaptures() || 
-                                  PotentialThisCaptureLocation.isValid(); 
+  bool hasPotentialCaptures() const {
+    return getNumPotentialVariableCaptures() ||
+                                  PotentialThisCaptureLocation.isValid();
   }
 
-  // When passed the index, returns the VarDecl and Expr associated
-  // with the index.
-  void getPotentialVariableCapture(unsigned Idx, VarDecl *&VD, Expr *&E) const;
+  void visitPotentialCaptures(
+      llvm::function_ref<void(VarDecl *, Expr *)> Callback) const;
 };
 
 FunctionScopeInfo::WeakObjectProfileTy::WeakObjectProfileTy()
@@ -980,12 +1018,12 @@ void FunctionScopeInfo::recordUseOfWeak(const ExprT *E, bool IsRead) {
   Uses.push_back(WeakUseTy(E, IsRead));
 }
 
-inline void
-CapturingScopeInfo::addThisCapture(bool isNested, SourceLocation Loc,
-                                   Expr *Cpy,
-                                   const bool ByCopy) {
-  Captures.push_back(Capture(Capture::ThisCapture, isNested, Loc, QualType(),
-                             Cpy, ByCopy));
+inline void CapturingScopeInfo::addThisCapture(bool isNested,
+                                               SourceLocation Loc,
+                                               QualType CaptureType,
+                                               bool ByCopy) {
+  Captures.push_back(Capture(Capture::ThisCapture, isNested, Loc, CaptureType,
+                             ByCopy, /*Invalid*/ false));
   CXXThisCaptureIndex = Captures.size();
 }
 

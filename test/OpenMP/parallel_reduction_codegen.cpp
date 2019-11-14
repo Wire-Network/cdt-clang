@@ -84,7 +84,7 @@ struct SST {
 // BLOCKS: [[SS_TY:%.+]] = type { i{{[0-9]+}}, i8
 // CHECK-DAG: [[S_FLOAT_TY:%.+]] = type { float }
 // CHECK-DAG: [[S_INT_TY:%.+]] = type { i{{[0-9]+}} }
-// CHECK-DAG: [[REDUCTION_LOC:@.+]] = private unnamed_addr constant %{{.+}} { i32 0, i32 18, i32 0, i32 0, i8*
+// CHECK-DAG: [[REDUCTION_LOC:@.+]] = private unnamed_addr global %{{.+}} { i32 0, i32 18, i32 0, i32 0, i8*
 // CHECK-DAG: [[REDUCTION_LOCK:@.+]] = common global [8 x i32] zeroinitializer
 
 //CHECK: foo_array_sect
@@ -622,7 +622,7 @@ int main() {
 
 // CHECK-NOT: call i32 @__kmpc_reduce
 
-// CHECK: ret void
+// CHECK: }
 
 // CHECK: define {{.*}} i{{[0-9]+}} [[TMAIN_INT]]()
 // CHECK: [[TEST:%.+]] = alloca [[S_INT_TY]],

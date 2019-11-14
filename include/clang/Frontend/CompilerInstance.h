@@ -1,9 +1,8 @@
 //===-- CompilerInstance.h - Clang Compiler Instance ------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,6 +21,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/BuryPointer.h"
 #include <cassert>
 #include <list>
 #include <memory>
@@ -44,7 +44,7 @@ class ExternalASTSource;
 class FileEntry;
 class FileManager;
 class FrontendAction;
-class MemoryBufferCache;
+class InMemoryModuleCache;
 class Module;
 class Preprocessor;
 class Sema;
@@ -82,9 +82,6 @@ class CompilerInstance : public ModuleLoader {
   /// Auxiliary Target info.
   IntrusiveRefCntPtr<TargetInfo> AuxTarget;
 
-  /// The virtual file system.
-  IntrusiveRefCntPtr<vfs::FileSystem> VirtualFileSystem;
-
   /// The file manager.
   IntrusiveRefCntPtr<FileManager> FileMgr;
 
@@ -92,7 +89,7 @@ class CompilerInstance : public ModuleLoader {
   IntrusiveRefCntPtr<SourceManager> SourceMgr;
 
   /// The cache of PCM files.
-  IntrusiveRefCntPtr<MemoryBufferCache> PCMCache;
+  IntrusiveRefCntPtr<InMemoryModuleCache> ModuleCache;
 
   /// The preprocessor.
   std::shared_ptr<Preprocessor> PP;
@@ -127,9 +124,6 @@ class CompilerInstance : public ModuleLoader {
   /// The module provider.
   std::shared_ptr<PCHContainerOperations> ThePCHContainerOperations;
 
-  /// The dependency file generator.
-  std::unique_ptr<DependencyFileGenerator> TheDependencyFileGenerator;
-
   std::vector<std::shared_ptr<DependencyCollector>> DependencyCollectors;
 
   /// The set of top-level modules that has already been loaded,
@@ -144,9 +138,9 @@ class CompilerInstance : public ModuleLoader {
   bool DeleteBuiltModules = true;
 
   /// The location of the module-import keyword for the last module
-  /// import. 
+  /// import.
   SourceLocation LastModuleImportLoc;
-  
+
   /// The result of the last module import.
   ///
   ModuleLoadResult LastModuleImportResult;
@@ -192,7 +186,7 @@ public:
   explicit CompilerInstance(
       std::shared_ptr<PCHContainerOperations> PCHContainerOps =
           std::make_shared<PCHContainerOperations>(),
-      MemoryBufferCache *SharedPCMCache = nullptr);
+      InMemoryModuleCache *SharedModuleCache = nullptr);
   ~CompilerInstance() override;
 
   /// @name High-Level Operations
@@ -246,7 +240,7 @@ public:
 
   /// Indicates whether we should (re)build the global module index.
   bool shouldBuildGlobalModuleIndex() const;
-  
+
   /// Set the flag indicating whether we should (re)build the global
   /// module index.
   void setBuildGlobalModuleIndex(bool Build) {
@@ -350,7 +344,7 @@ public:
   void setDiagnostics(DiagnosticsEngine *Value);
 
   DiagnosticConsumer &getDiagnosticClient() const {
-    assert(Diagnostics && Diagnostics->getClient() && 
+    assert(Diagnostics && Diagnostics->getClient() &&
            "Compiler instance has no diagnostic client!");
     return *Diagnostics->getClient();
   }
@@ -382,20 +376,8 @@ public:
   /// @name Virtual File System
   /// {
 
-  bool hasVirtualFileSystem() const { return VirtualFileSystem != nullptr; }
-
-  vfs::FileSystem &getVirtualFileSystem() const {
-    assert(hasVirtualFileSystem() &&
-           "Compiler instance has no virtual file system");
-    return *VirtualFileSystem;
-  }
-
-  /// Replace the current virtual file system.
-  ///
-  /// \note Most clients should use setFileManager, which will implicitly reset
-  /// the virtual file system to the one contained in the file manager.
-  void setVirtualFileSystem(IntrusiveRefCntPtr<vfs::FileSystem> FS) {
-    VirtualFileSystem = std::move(FS);
+  llvm::vfs::FileSystem &getVirtualFileSystem() const {
+    return getFileManager().getVirtualFileSystem();
   }
 
   /// }
@@ -409,9 +391,9 @@ public:
     assert(FileMgr && "Compiler instance has no file manager!");
     return *FileMgr;
   }
-  
+
   void resetAndLeakFileManager() {
-    BuryPointer(FileMgr.get());
+    llvm::BuryPointer(FileMgr.get());
     FileMgr.resetWithoutRelease();
   }
 
@@ -429,9 +411,9 @@ public:
     assert(SourceMgr && "Compiler instance has no source manager!");
     return *SourceMgr;
   }
-  
+
   void resetAndLeakSourceManager() {
-    BuryPointer(SourceMgr.get());
+    llvm::BuryPointer(SourceMgr.get());
     SourceMgr.resetWithoutRelease();
   }
 
@@ -453,7 +435,7 @@ public:
   std::shared_ptr<Preprocessor> getPreprocessorPtr() { return PP; }
 
   void resetAndLeakPreprocessor() {
-    BuryPointer(new std::shared_ptr<Preprocessor>(PP));
+    llvm::BuryPointer(new std::shared_ptr<Preprocessor>(PP));
   }
 
   /// Replace the current preprocessor.
@@ -469,9 +451,9 @@ public:
     assert(Context && "Compiler instance has no AST context!");
     return *Context;
   }
-  
+
   void resetAndLeakASTContext() {
-    BuryPointer(Context.get());
+    llvm::BuryPointer(Context.get());
     Context.resetWithoutRelease();
   }
 
@@ -481,7 +463,7 @@ public:
   /// Replace the current Sema; the compiler instance takes ownership
   /// of S.
   void setSema(Sema *S);
-  
+
   /// }
   /// @name ASTConsumer
   /// {
@@ -506,7 +488,7 @@ public:
   /// {
   bool hasSema() const { return (bool)TheSema; }
 
-  Sema &getSema() const { 
+  Sema &getSema() const {
     assert(TheSema && "Compiler instance has no Sema object!");
     return *TheSema;
   }
@@ -613,7 +595,7 @@ public:
   /// attached to (and, then, owned by) the DiagnosticsEngine inside this AST
   /// unit.
   ///
-  /// \param ShouldOwnClient If Client is non-NULL, specifies whether 
+  /// \param ShouldOwnClient If Client is non-NULL, specifies whether
   /// the diagnostic object should take ownership of the client.
   void createDiagnostics(DiagnosticConsumer *Client = nullptr,
                          bool ShouldOwnClient = true);
@@ -645,7 +627,8 @@ public:
   /// Create the file manager and replace any existing one with it.
   ///
   /// \return The new file manager on success, or null on failure.
-  FileManager *createFileManager();
+  FileManager *
+  createFileManager(IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS = nullptr);
 
   /// Create the source manager and replace any existing one with it.
   void createSourceManager(FileManager &FileMgr);
@@ -671,10 +654,10 @@ public:
   /// \return - The new object on success, or null on failure.
   static IntrusiveRefCntPtr<ASTReader> createPCHExternalASTSource(
       StringRef Path, StringRef Sysroot, bool DisablePCHValidation,
-      bool AllowPCHWithCompilerErrors, Preprocessor &PP, ASTContext &Context,
+      bool AllowPCHWithCompilerErrors, Preprocessor &PP,
+      InMemoryModuleCache &ModuleCache, ASTContext &Context,
       const PCHContainerReader &PCHContainerRdr,
       ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
-      DependencyFileGenerator *DependencyFile,
       ArrayRef<std::shared_ptr<DependencyCollector>> DependencyCollectors,
       void *DeserializationListener, bool OwnDeserializationListener,
       bool Preamble, bool UseGlobalModuleIndex);
@@ -693,7 +676,7 @@ public:
   /// Create the Sema object to be used for parsing.
   void createSema(TranslationUnitKind TUKind,
                   CodeCompleteConsumer *CompletionConsumer);
-  
+
   /// Create the frontend timer and replace any existing one with it.
   void createFrontendTimer();
 
@@ -813,7 +796,7 @@ public:
 
   void setExternalSemaSource(IntrusiveRefCntPtr<ExternalSemaSource> ESS);
 
-  MemoryBufferCache &getPCMCache() const { return *PCMCache; }
+  InMemoryModuleCache &getModuleCache() const { return *ModuleCache; }
 };
 
 } // end namespace clang

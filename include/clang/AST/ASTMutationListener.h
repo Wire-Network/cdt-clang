@@ -1,9 +1,8 @@
 //===--- ASTMutationListener.h - AST Mutation Interface --------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -128,19 +127,24 @@ public:
   virtual void DeclarationMarkedOpenMPDeclareTarget(const Decl *D,
                                                     const Attr *Attr) {}
 
+  /// A declaration is marked as a variable with OpenMP allocator.
+  ///
+  /// \param D the declaration marked as a variable with OpenMP allocator.
+  virtual void DeclarationMarkedOpenMPAllocate(const Decl *D, const Attr *A) {}
+
   /// A definition has been made visible by being redefined locally.
   ///
   /// \param D The definition that was previously not visible.
   /// \param M The containing module in which the definition was made visible,
   ///        if any.
   virtual void RedefinedHiddenDefinition(const NamedDecl *D, Module *M) {}
-  
+
   /// An attribute was added to a RecordDecl
   ///
   /// \param Attr The attribute that was added to the Record
   ///
   /// \param Record The RecordDecl that got a new attribute
-  virtual void AddedAttributeToRecord(const Attr *Attr, 
+  virtual void AddedAttributeToRecord(const Attr *Attr,
                                       const RecordDecl *Record) {}
 
   // NOTE: If new methods are added they should also be added to

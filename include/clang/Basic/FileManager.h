@@ -1,9 +1,8 @@
 //===--- FileManager.h - File System Probing and Caching --------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -16,7 +15,7 @@
 #define LLVM_CLANG_BASIC_FILEMANAGER_H
 
 #include "clang/Basic/FileSystemOptions.h"
-#include "clang/Basic/VirtualFileSystem.h"
+#include "clang/Basic/LLVM.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallVector.h"
@@ -25,9 +24,10 @@
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include <ctime>
-#include <memory>
 #include <map>
+#include <memory>
 #include <string>
 
 namespace llvm {
@@ -67,15 +67,14 @@ class FileEntry {
   unsigned UID;               // A unique (small) ID for the file.
   llvm::sys::fs::UniqueID UniqueID;
   bool IsNamedPipe;
-  bool InPCH;
   bool IsValid;               // Is this \c FileEntry initialized and valid?
 
   /// The open file, if it is owned by the \p FileEntry.
-  mutable std::unique_ptr<vfs::File> File;
+  mutable std::unique_ptr<llvm::vfs::File> File;
 
 public:
   FileEntry()
-      : UniqueID(0, 0), IsNamedPipe(false), InPCH(false), IsValid(false)
+      : UniqueID(0, 0), IsNamedPipe(false), IsValid(false)
   {}
 
   FileEntry(const FileEntry &) = delete;
@@ -87,7 +86,6 @@ public:
   off_t getSize() const { return Size; }
   unsigned getUID() const { return UID; }
   const llvm::sys::fs::UniqueID &getUniqueID() const { return UniqueID; }
-  bool isInPCH() const { return InPCH; }
   time_t getModificationTime() const { return ModTime; }
 
   /// Return the directory the file lives in.
@@ -102,9 +100,11 @@ public:
   void closeFile() const {
     File.reset(); // rely on destructor to close File
   }
-};
 
-struct FileData;
+  // Only for use in tests to see if deferred opens are happening, rather than
+  // relying on RealPathName being empty.
+  bool isOpenForTests() const { return File != nullptr; }
+};
 
 /// Implements support for file system lookup, file system caching,
 /// and directory search management.
@@ -114,7 +114,7 @@ struct FileData;
 /// as a single file.
 ///
 class FileManager : public RefCountedBase<FileManager> {
-  IntrusiveRefCntPtr<vfs::FileSystem> FS;
+  IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS;
   FileSystemOptions FileSystemOpts;
 
   /// Cache for existing real directories.
@@ -164,16 +164,23 @@ class FileManager : public RefCountedBase<FileManager> {
   // Caching.
   std::unique_ptr<FileSystemStatCache> StatCache;
 
-  bool getStatValue(StringRef Path, FileData &Data, bool isFile,
-                    std::unique_ptr<vfs::File> *F);
+  bool getStatValue(StringRef Path, llvm::vfs::Status &Status, bool isFile,
+                    std::unique_ptr<llvm::vfs::File> *F);
 
   /// Add all ancestors of the given path (pointing to either a file
   /// or a directory) as virtual directories.
   void addAncestorsAsVirtualDirs(StringRef Path);
 
+  /// Fills the RealPathName in file entry.
+  void fillRealPathName(FileEntry *UFE, llvm::StringRef FileName);
+
 public:
+  /// Construct a file manager, optionally with a custom VFS.
+  ///
+  /// \param FS if non-null, the VFS to use.  Otherwise uses
+  /// llvm::vfs::getRealFileSystem().
   FileManager(const FileSystemOptions &FileSystemOpts,
-              IntrusiveRefCntPtr<vfs::FileSystem> FS = nullptr);
+              IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS = nullptr);
   ~FileManager();
 
   /// Installs the provided FileSystemStatCache object within
@@ -183,18 +190,10 @@ public:
   ///
   /// \param statCache the new stat cache to install. Ownership of this
   /// object is transferred to the FileManager.
-  ///
-  /// \param AtBeginning whether this new stat cache must be installed at the
-  /// beginning of the chain of stat caches. Otherwise, it will be added to
-  /// the end of the chain.
-  void addStatCache(std::unique_ptr<FileSystemStatCache> statCache,
-                    bool AtBeginning = false);
+  void setStatCache(std::unique_ptr<FileSystemStatCache> statCache);
 
-  /// Removes the specified FileSystemStatCache object from the manager.
-  void removeStatCache(FileSystemStatCache *statCache);
-
-  /// Removes all FileSystemStatCache objects from the manager.
-  void clearStatCaches();
+  /// Removes the FileSystemStatCache object from the manager.
+  void clearStatCache();
 
   /// Lookup, cache, and verify the specified directory (real or
   /// virtual).
@@ -222,9 +221,7 @@ public:
   FileSystemOptions &getFileSystemOpts() { return FileSystemOpts; }
   const FileSystemOptions &getFileSystemOpts() const { return FileSystemOpts; }
 
-  IntrusiveRefCntPtr<vfs::FileSystem> getVirtualFileSystem() const {
-    return FS;
-  }
+  llvm::vfs::FileSystem &getVirtualFileSystem() const { return *FS; }
 
   /// Retrieve a file entry for a "virtual" file that acts as
   /// if there were a file with the given name on disk.
@@ -247,8 +244,7 @@ public:
   /// FileManager's FileSystemOptions.
   ///
   /// \returns false on success, true on error.
-  bool getNoncachedStatValue(StringRef Path,
-                             vfs::Status &Result);
+  bool getNoncachedStatValue(StringRef Path, llvm::vfs::Status &Result);
 
   /// Remove the real file \p Entry from the cache.
   void invalidateCache(const FileEntry *Entry);

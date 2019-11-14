@@ -1,7 +1,7 @@
-// RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm -std=c++11     %s -o - | FileCheck -check-prefix=CHECK-LIN -check-prefix=CHECK-LIN64 %s
-// RUN: %clang_cc1 -triple i386-linux-gnu -emit-llvm -std=c++11     %s -o -   | FileCheck -check-prefix=CHECK-LIN -check-prefix=CHECK-LIN32 %s
-// RUN: %clang_cc1 -triple x86_64-windows-msvc -emit-llvm -std=c++11  %s -o - -DWIN_TEST | FileCheck -check-prefix=CHECK-WIN64 %s
-// RUN: %clang_cc1 -triple i386-windows-msvc -emit-llvm -std=c++11  %s -o - -DWIN_TEST   | FileCheck -check-prefix=CHECK-WIN32 %s
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm -std=c++11     %s -o - | FileCheck -allow-deprecated-dag-overlap -check-prefix=CHECK-LIN -check-prefix=CHECK-LIN64 %s
+// RUN: %clang_cc1 -triple i386-linux-gnu -emit-llvm -std=c++11     %s -o -   | FileCheck -allow-deprecated-dag-overlap -check-prefix=CHECK-LIN -check-prefix=CHECK-LIN32 %s
+// RUN: %clang_cc1 -triple x86_64-windows-msvc -emit-llvm -std=c++11  %s -o - -DWIN_TEST | FileCheck -allow-deprecated-dag-overlap -check-prefix=CHECK-WIN64 %s
+// RUN: %clang_cc1 -triple i386-windows-msvc -emit-llvm -std=c++11  %s -o - -DWIN_TEST   | FileCheck -allow-deprecated-dag-overlap -check-prefix=CHECK-WIN32 %s
 
 int __regcall foo(int i);
 
@@ -99,7 +99,7 @@ void force_gen() {
 long double _Complex __regcall foo(long double _Complex f) {
   return f;
 }
-// CHECK-LIN64-DAG: define x86_regcallcc void @_Z15__regcall3__fooCe({ x86_fp80, x86_fp80 }* noalias sret %agg.result, { x86_fp80, x86_fp80 }* byval align 16 %f)
-// CHECK-LIN32-DAG: define x86_regcallcc void @_Z15__regcall3__fooCe({ x86_fp80, x86_fp80 }* inreg noalias sret %agg.result, { x86_fp80, x86_fp80 }* byval align 4 %f)
+// CHECK-LIN64-DAG: define x86_regcallcc void @_Z15__regcall3__fooCe({ x86_fp80, x86_fp80 }* noalias sret %agg.result, { x86_fp80, x86_fp80 }* byval({ x86_fp80, x86_fp80 }) align 16 %f)
+// CHECK-LIN32-DAG: define x86_regcallcc void @_Z15__regcall3__fooCe({ x86_fp80, x86_fp80 }* inreg noalias sret %agg.result, { x86_fp80, x86_fp80 }* byval({ x86_fp80, x86_fp80 }) align 4 %f)
 // CHECK-WIN64-DAG: define dso_local x86_regcallcc { double, double } @"?foo@@YwU?$_Complex@O@__clang@@U12@@Z"(double %f.0, double %f.1)
 // CHECK-WIN32-DAG: define dso_local x86_regcallcc { double, double } @"?foo@@YwU?$_Complex@O@__clang@@U12@@Z"(double %f.0, double %f.1)

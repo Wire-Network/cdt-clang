@@ -1,9 +1,8 @@
 //===- SValBuilder.cpp - Basic class for all SValBuilder implementations --===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -22,6 +21,7 @@
 #include "clang/AST/Type.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Analysis/AnalysisDeclContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/APSIntType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/BasicValueFactory.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/MemRegion.h"
@@ -29,6 +29,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/Store.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SubEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymExpr.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymbolManager.h"
 #include "llvm/ADT/APSInt.h"
@@ -269,8 +270,8 @@ DefinedSVal SValBuilder::getBlockPointer(const BlockDecl *block,
 /// Return a memory region for the 'this' object reference.
 loc::MemRegionVal SValBuilder::getCXXThis(const CXXMethodDecl *D,
                                           const StackFrameContext *SFC) {
-  return loc::MemRegionVal(getRegionManager().
-                           getCXXThisRegion(D->getThisType(getContext()), SFC));
+  return loc::MemRegionVal(
+      getRegionManager().getCXXThisRegion(D->getThisType(), SFC));
 }
 
 /// Return a memory region for the 'this' object reference.
@@ -360,9 +361,9 @@ Optional<SVal> SValBuilder::getConstantVal(const Expr *E) {
       return None;
 
     ASTContext &Ctx = getContext();
-    llvm::APSInt Result;
+    Expr::EvalResult Result;
     if (E->EvaluateAsInt(Result, Ctx))
-      return makeIntVal(Result);
+      return makeIntVal(Result.Val.getInt());
 
     if (Loc::isLocType(E->getType()))
       if (E->isNullPointerConstant(Ctx, Expr::NPC_ValueDependentIsNotNull))
@@ -373,18 +374,17 @@ Optional<SVal> SValBuilder::getConstantVal(const Expr *E) {
   }
 }
 
-SVal SValBuilder::makeSymExprValNN(ProgramStateRef State,
-                                   BinaryOperator::Opcode Op,
+SVal SValBuilder::makeSymExprValNN(BinaryOperator::Opcode Op,
                                    NonLoc LHS, NonLoc RHS,
                                    QualType ResultTy) {
-  if (!State->isTainted(RHS) && !State->isTainted(LHS))
-    return UnknownVal();
-
   const SymExpr *symLHS = LHS.getAsSymExpr();
   const SymExpr *symRHS = RHS.getAsSymExpr();
+
   // TODO: When the Max Complexity is reached, we should conjure a symbol
   // instead of generating an Unknown value and propagate the taint info to it.
-  const unsigned MaxComp = 10000; // 100000 28X
+  const unsigned MaxComp = StateMgr.getOwningEngine()
+                               .getAnalysisManager()
+                               .options.MaxSymbolComplexity;
 
   if (symLHS && symRHS &&
       (symLHS->computeComplexity() + symRHS->computeComplexity()) <  MaxComp)
@@ -455,7 +455,7 @@ DefinedOrUnknownSVal SValBuilder::evalEQ(ProgramStateRef state,
 /// Assumes the input types are canonical.
 static bool shouldBeModeledWithNoOp(ASTContext &Context, QualType ToTy,
                                                          QualType FromTy) {
-  while (Context.UnwrapSimilarPointerTypes(ToTy, FromTy)) {
+  while (Context.UnwrapSimilarTypes(ToTy, FromTy)) {
     Qualifiers Quals1, Quals2;
     ToTy = Context.getUnqualifiedArrayType(ToTy, Quals1);
     FromTy = Context.getUnqualifiedArrayType(FromTy, Quals2);
@@ -470,6 +470,10 @@ static bool shouldBeModeledWithNoOp(ASTContext &Context, QualType ToTy,
 
   // If we are casting to void, the 'From' value can be used to represent the
   // 'To' value.
+  //
+  // FIXME: Doing this after unwrapping the types doesn't make any sense. A
+  // cast from 'int**' to 'void**' is not special in the way that a cast from
+  // 'int*' to 'void*' is.
   if (ToTy->isVoidType())
     return true;
 

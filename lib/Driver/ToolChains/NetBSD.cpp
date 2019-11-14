@@ -1,9 +1,8 @@
 //===--- NetBSD.cpp - NetBSD ToolChain Implementations ----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,6 +16,7 @@
 #include "clang/Driver/Options.h"
 #include "clang/Driver/SanitizerArgs.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Support/VirtualFileSystem.h"
 
 using namespace clang::driver;
 using namespace clang::driver::tools;
@@ -64,11 +64,10 @@ void netbsd::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-mabi");
     CmdArgs.push_back(mips::getGnuCompatibleMipsABIName(ABIName).data());
 
-    if (getToolChain().getArch() == llvm::Triple::mips ||
-        getToolChain().getArch() == llvm::Triple::mips64)
-      CmdArgs.push_back("-EB");
-    else
+    if (getToolChain().getTriple().isLittleEndian())
       CmdArgs.push_back("-EL");
+    else
+      CmdArgs.push_back("-EB");
 
     AddAssemblerKPIC(getToolChain(), Args, CmdArgs);
     break;
@@ -123,6 +122,10 @@ void netbsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back("--eh-frame-hdr");
   if (Args.hasArg(options::OPT_static)) {
     CmdArgs.push_back("-Bstatic");
+    if (Args.hasArg(options::OPT_pie)) {
+      Args.AddAllArgs(CmdArgs, options::OPT_pie);
+      CmdArgs.push_back("--no-dynamic-linker");
+    }
   } else {
     if (Args.hasArg(options::OPT_rdynamic))
       CmdArgs.push_back("-export-dynamic");
@@ -161,7 +164,7 @@ void netbsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     break;
   case llvm::Triple::armeb:
   case llvm::Triple::thumbeb:
-    arm::appendEBLinkFlags(Args, CmdArgs, ToolChain.getEffectiveTriple());
+    arm::appendBE8LinkFlag(Args, CmdArgs, ToolChain.getEffectiveTriple());
     CmdArgs.push_back("-m");
     switch (ToolChain.getTriple().getEnvironment()) {
     case llvm::Triple::EABI:
@@ -252,6 +255,13 @@ void netbsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   bool NeedsSanitizerDeps = addSanitizerRuntimes(getToolChain(), Args, CmdArgs);
   bool NeedsXRayDeps = addXRayRuntime(ToolChain, Args, CmdArgs);
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs, JA);
+
+  const SanitizerArgs &SanArgs = ToolChain.getSanitizerArgs();
+  if (SanArgs.needsSharedRt()) {
+    CmdArgs.push_back("-rpath");
+    CmdArgs.push_back(Args.MakeArgString(
+        ToolChain.getCompilerRTPath().c_str()));
+  }
 
   unsigned Major, Minor, Micro;
   ToolChain.getTriple().getOSVersion(Major, Minor, Micro);
@@ -413,8 +423,23 @@ ToolChain::CXXStdlibType NetBSD::GetDefaultCXXStdlibType() const {
 
 void NetBSD::addLibCxxIncludePaths(const llvm::opt::ArgList &DriverArgs,
                                    llvm::opt::ArgStringList &CC1Args) const {
-  addSystemInclude(DriverArgs, CC1Args,
-                   getDriver().SysRoot + "/usr/include/c++/");
+  const std::string Candidates[] = {
+    // directory relative to build tree
+    getDriver().Dir + "/../include/c++/v1",
+    // system install with full upstream path
+    getDriver().SysRoot + "/usr/include/c++/v1",
+    // system install from src
+    getDriver().SysRoot + "/usr/include/c++",
+  };
+
+  for (const auto &IncludePath : Candidates) {
+    if (!getVFS().exists(IncludePath + "/__config"))
+      continue;
+
+    // Use the first candidate that looks valid.
+    addSystemInclude(DriverArgs, CC1Args, IncludePath);
+    return;
+  }
 }
 
 void NetBSD::addLibStdCxxIncludePaths(const llvm::opt::ArgList &DriverArgs,
@@ -438,6 +463,8 @@ SanitizerMask NetBSD::getSupportedSanitizers() const {
   SanitizerMask Res = ToolChain::getSupportedSanitizers();
   if (IsX86 || IsX86_64) {
     Res |= SanitizerKind::Address;
+    Res |= SanitizerKind::PointerCompare;
+    Res |= SanitizerKind::PointerSubtract;
     Res |= SanitizerKind::Function;
     Res |= SanitizerKind::Leak;
     Res |= SanitizerKind::SafeStack;
@@ -445,12 +472,23 @@ SanitizerMask NetBSD::getSupportedSanitizers() const {
     Res |= SanitizerKind::Vptr;
   }
   if (IsX86_64) {
-    Res |= SanitizerKind::Efficiency;
+    Res |= SanitizerKind::DataFlow;
     Res |= SanitizerKind::Fuzzer;
     Res |= SanitizerKind::FuzzerNoLink;
+    Res |= SanitizerKind::HWAddress;
     Res |= SanitizerKind::KernelAddress;
+    Res |= SanitizerKind::KernelHWAddress;
+    Res |= SanitizerKind::KernelMemory;
     Res |= SanitizerKind::Memory;
     Res |= SanitizerKind::Thread;
   }
   return Res;
+}
+
+void NetBSD::addClangTargetOptions(const ArgList &,
+                                   ArgStringList &CC1Args,
+                                   Action::OffloadKind) const {
+  const SanitizerArgs &SanArgs = getSanitizerArgs();
+  if (SanArgs.hasAnySanitizer())
+    CC1Args.push_back("-D_REENTRANT");
 }

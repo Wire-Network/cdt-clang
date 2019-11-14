@@ -1,9 +1,8 @@
 //===--- DeclPrinter.cpp - Printing implementation for Decl ASTs ----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -16,6 +15,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/DeclVisitor.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
@@ -44,7 +44,7 @@ namespace {
     ///
     /// \param Quals The Objective-C declaration qualifiers.
     /// \param T The type to print.
-    void PrintObjCMethodType(ASTContext &Ctx, Decl::ObjCDeclQualifier Quals, 
+    void PrintObjCMethodType(ASTContext &Ctx, Decl::ObjCDeclQualifier Quals,
                              QualType T);
 
     void PrintObjCTypeParams(ObjCTypeParamList *Params);
@@ -100,10 +100,14 @@ namespace {
     void VisitUsingDecl(UsingDecl *D);
     void VisitUsingShadowDecl(UsingShadowDecl *D);
     void VisitOMPThreadPrivateDecl(OMPThreadPrivateDecl *D);
+    void VisitOMPAllocateDecl(OMPAllocateDecl *D);
+    void VisitOMPRequiresDecl(OMPRequiresDecl *D);
     void VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D);
+    void VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D);
     void VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D);
 
-    void printTemplateParameters(const TemplateParameterList *Params);
+    void printTemplateParameters(const TemplateParameterList *Params,
+                                 bool OmitTemplateKW = false);
     void printTemplateArguments(const TemplateArgumentList &Args,
                                 const TemplateParameterList *Params = nullptr);
     void prettyPrintAttributes(Decl *D);
@@ -122,6 +126,18 @@ void Decl::print(raw_ostream &Out, const PrintingPolicy &Policy,
   DeclPrinter Printer(Out, Policy, getASTContext(), Indentation,
                       PrintInstantiation);
   Printer.Visit(const_cast<Decl*>(this));
+}
+
+void TemplateParameterList::print(raw_ostream &Out, const ASTContext &Context,
+                                  bool OmitTemplateKW) const {
+  print(Out, Context, Context.getPrintingPolicy(), OmitTemplateKW);
+}
+
+void TemplateParameterList::print(raw_ostream &Out, const ASTContext &Context,
+                                  const PrintingPolicy &Policy,
+                                  bool OmitTemplateKW) const {
+  DeclPrinter Printer(Out, Policy, Context);
+  Printer.printTemplateParameters(this, OmitTemplateKW);
 }
 
 static QualType GetBaseType(QualType T) {
@@ -196,7 +212,7 @@ LLVM_DUMP_METHOD void DeclContext::dumpDeclContext() const {
   const DeclContext *DC = this;
   while (!DC->isTranslationUnit())
     DC = DC->getParent();
-  
+
   ASTContext &Ctx = cast<TranslationUnitDecl>(DC)->getASTContext();
   DeclPrinter Printer(llvm::errs(), Ctx.getPrintingPolicy(), Ctx, 0);
   Printer.VisitDeclContext(const_cast<DeclContext *>(this), /*Indent=*/false);
@@ -422,7 +438,9 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
 
     // FIXME: Need to be able to tell the DeclPrinter when
     const char *Terminator = nullptr;
-    if (isa<OMPThreadPrivateDecl>(*D) || isa<OMPDeclareReductionDecl>(*D))
+    if (isa<OMPThreadPrivateDecl>(*D) || isa<OMPDeclareReductionDecl>(*D) ||
+        isa<OMPDeclareMapperDecl>(*D) || isa<OMPRequiresDecl>(*D) ||
+        isa<OMPAllocateDecl>(*D))
       Terminator = nullptr;
     else if (isa<ObjCMethodDecl>(*D) && cast<ObjCMethodDecl>(*D)->hasBody())
       Terminator = nullptr;
@@ -482,7 +500,7 @@ void DeclPrinter::VisitTranslationUnitDecl(TranslationUnitDecl *D) {
 void DeclPrinter::VisitTypedefDecl(TypedefDecl *D) {
   if (!Policy.SuppressSpecifiers) {
     Out << "typedef ";
-    
+
     if (D->isModulePrivate())
       Out << "__module_private__ ";
   }
@@ -544,8 +562,23 @@ void DeclPrinter::VisitEnumConstantDecl(EnumConstantDecl *D) {
   prettyPrintAttributes(D);
   if (Expr *Init = D->getInitExpr()) {
     Out << " = ";
-    Init->printPretty(Out, nullptr, Policy, Indentation, &Context);
+    Init->printPretty(Out, nullptr, Policy, Indentation, "\n", &Context);
   }
+}
+
+static void printExplicitSpecifier(ExplicitSpecifier ES, llvm::raw_ostream &Out,
+                                   PrintingPolicy &Policy,
+                                   unsigned Indentation) {
+  std::string Proto = "explicit";
+  llvm::raw_string_ostream EOut(Proto);
+  if (ES.getExpr()) {
+    EOut << "(";
+    ES.getExpr()->printPretty(EOut, nullptr, Policy, Indentation);
+    EOut << ")";
+  }
+  EOut << " ";
+  EOut.flush();
+  Out << EOut.str();
 }
 
 void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
@@ -577,11 +610,12 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
     if (D->isInlineSpecified())  Out << "inline ";
     if (D->isVirtualAsWritten()) Out << "virtual ";
     if (D->isModulePrivate())    Out << "__module_private__ ";
-    if (D->isConstexpr() && !D->isExplicitlyDefaulted()) Out << "constexpr ";
-    if ((CDecl && CDecl->isExplicitSpecified()) ||
-        (ConversionDecl && ConversionDecl->isExplicitSpecified()) ||
-        (GuideDecl && GuideDecl->isExplicitSpecified()))
-      Out << "explicit ";
+    if (D->isConstexprSpecified() && !D->isExplicitlyDefaulted())
+      Out << "constexpr ";
+    if (D->isConsteval())        Out << "consteval ";
+    ExplicitSpecifier ExplicitSpec = ExplicitSpecifier::getFromDecl(D);
+    if (ExplicitSpec.isSpecified())
+      printExplicitSpecifier(ExplicitSpec, Out, Policy, Indentation);
   }
 
   PrintingPolicy SubPolicy(Policy);
@@ -641,7 +675,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
     }
 
     Proto += ")";
-    
+
     if (FT) {
       if (FT->isConst())
         Proto += " const";
@@ -666,7 +700,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
       Proto += " throw(";
       if (FT->getExceptionSpecType() == EST_MSAny)
         Proto += "...";
-      else 
+      else
         for (unsigned I = 0, N = FT->getNumExceptions(); I != N; ++I) {
           if (I)
             Proto += ", ";
@@ -984,25 +1018,35 @@ void DeclPrinter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
     Visit(*D->decls_begin());
 }
 
-void DeclPrinter::printTemplateParameters(const TemplateParameterList *Params) {
+void DeclPrinter::printTemplateParameters(const TemplateParameterList *Params,
+                                          bool OmitTemplateKW) {
   assert(Params);
 
-  Out << "template <";
+  if (!OmitTemplateKW)
+    Out << "template ";
+  Out << '<';
 
-  for (unsigned i = 0, e = Params->size(); i != e; ++i) {
-    if (i != 0)
+  bool NeedComma = false;
+  for (const Decl *Param : *Params) {
+    if (Param->isImplicit())
+      continue;
+
+    if (NeedComma)
       Out << ", ";
+    else
+      NeedComma = true;
 
-    const Decl *Param = Params->getParam(i);
     if (auto TTP = dyn_cast<TemplateTypeParmDecl>(Param)) {
 
       if (TTP->wasDeclaredWithTypename())
-        Out << "typename ";
+        Out << "typename";
       else
-        Out << "class ";
+        Out << "class";
 
       if (TTP->isParameterPack())
-        Out << "...";
+        Out << " ...";
+      else if (!TTP->getName().empty())
+        Out << ' ';
 
       Out << *TTP;
 
@@ -1027,7 +1071,9 @@ void DeclPrinter::printTemplateParameters(const TemplateParameterList *Params) {
     }
   }
 
-  Out << "> ";
+  Out << '>';
+  if (!OmitTemplateKW)
+    Out << ' ';
 }
 
 void DeclPrinter::printTemplateArguments(const TemplateArgumentList &Args,
@@ -1077,8 +1123,13 @@ void DeclPrinter::VisitTemplateDecl(const TemplateDecl *D) {
     if (TTP->isParameterPack())
       Out << "...";
     Out << D->getName();
-  } else {
-    Visit(D->getTemplatedDecl());
+  } else if (auto *TD = D->getTemplatedDecl())
+    Visit(TD);
+  else if (const auto *Concept = dyn_cast<ConceptDecl>(D)) {
+    Out << "concept " << Concept->getName() << " = " ;
+    Concept->getConstraintExpr()->printPretty(Out, nullptr, Policy,
+                                              Indentation);
+    Out << ";";
   }
 }
 
@@ -1091,6 +1142,10 @@ void DeclPrinter::VisitFunctionTemplateDecl(FunctionTemplateDecl *D) {
       printTemplateParameters(FD->getTemplateParameterList(I));
   }
   VisitRedeclarableTemplateDecl(D);
+  // Declare target attribute is special one, natural spelling for the pragma
+  // assumes "ending" construct so print it here.
+  if (D->getTemplatedDecl()->hasAttr<OMPDeclareTargetDeclAttr>())
+    Out << "#pragma omp end declare target\n";
 
   // Never print "instantiations" for deduction guides (they don't really
   // have them).
@@ -1141,8 +1196,8 @@ void DeclPrinter::VisitClassTemplatePartialSpecializationDecl(
 // Objective-C declarations
 //----------------------------------------------------------------------------
 
-void DeclPrinter::PrintObjCMethodType(ASTContext &Ctx, 
-                                      Decl::ObjCDeclQualifier Quals, 
+void DeclPrinter::PrintObjCMethodType(ASTContext &Ctx,
+                                      Decl::ObjCDeclQualifier Quals,
                                       QualType T) {
   Out << '(';
   if (Quals & Decl::ObjCDeclQualifier::OBJC_TQ_In)
@@ -1161,7 +1216,7 @@ void DeclPrinter::PrintObjCMethodType(ASTContext &Ctx,
     if (auto nullability = AttributedType::stripOuterNullability(T))
       Out << getNullabilitySpelling(*nullability, true) << ' ';
   }
-  
+
   Out << Ctx.getUnqualifiedObjCPointerType(T).getAsString(Policy);
   Out << ')';
 }
@@ -1216,7 +1271,7 @@ void DeclPrinter::VisitObjCMethodDecl(ObjCMethodDecl *OMD) {
     if (lastPos != 0)
       Out << " ";
     Out << name.substr(lastPos, pos - lastPos) << ':';
-    PrintObjCMethodType(OMD->getASTContext(), 
+    PrintObjCMethodType(OMD->getASTContext(),
                         PI->getObjCDeclQualifier(),
                         PI->getType());
     Out << *PI;
@@ -1228,7 +1283,7 @@ void DeclPrinter::VisitObjCMethodDecl(ObjCMethodDecl *OMD) {
 
   if (OMD->isVariadic())
       Out << ", ...";
-  
+
   prettyPrintAttributes(OMD);
 
   if (OMD->getBody() && !Policy.TerseOutput) {
@@ -1248,7 +1303,7 @@ void DeclPrinter::VisitObjCImplementationDecl(ObjCImplementationDecl *OID) {
     Out << "@implementation " << I << " : " << *SID;
   else
     Out << "@implementation " << I;
-  
+
   if (OID->ivar_size() > 0) {
     Out << "{\n";
     eolnOut = true;
@@ -1290,7 +1345,7 @@ void DeclPrinter::VisitObjCInterfaceDecl(ObjCInterfaceDecl *OID) {
   if (auto TypeParams = OID->getTypeParamListAsWritten()) {
     PrintObjCTypeParams(TypeParams);
   }
-  
+
   if (SID)
     Out << " : " << QualType(OID->getSuperClassType(), 0).getAsString(Policy);
 
@@ -1369,7 +1424,7 @@ void DeclPrinter::VisitObjCCategoryDecl(ObjCCategoryDecl *PID) {
     Indentation -= Policy.Indentation;
     Out << "}\n";
   }
-  
+
   VisitDeclContext(PID, false);
   Out << "@end";
 
@@ -1383,6 +1438,13 @@ void DeclPrinter::VisitObjCCompatibleAliasDecl(ObjCCompatibleAliasDecl *AID) {
 
 /// PrintObjCPropertyDecl - print a property declaration.
 ///
+/// Print attributes in the following order:
+/// - class
+/// - nonatomic | atomic
+/// - assign | retain | strong | copy | weak | unsafe_unretained
+/// - readwrite | readonly
+/// - getter & setter
+/// - nullability
 void DeclPrinter::VisitObjCPropertyDecl(ObjCPropertyDecl *PDecl) {
   if (PDecl->getPropertyImplementation() == ObjCPropertyDecl::Required)
     Out << "@required\n";
@@ -1394,86 +1456,96 @@ void DeclPrinter::VisitObjCPropertyDecl(ObjCPropertyDecl *PDecl) {
   Out << "@property";
   if (PDecl->getPropertyAttributes() != ObjCPropertyDecl::OBJC_PR_noattr) {
     bool first = true;
-    Out << " (";
-    if (PDecl->getPropertyAttributes() &
-        ObjCPropertyDecl::OBJC_PR_readonly) {
-      Out << (first ? ' ' : ',') << "readonly";
-      first = false;
-    }
-
-    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_getter) {
-      Out << (first ? ' ' : ',') << "getter = ";
-      PDecl->getGetterName().print(Out);
-      first = false;
-    }
-    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_setter) {
-      Out << (first ? ' ' : ',') << "setter = ";
-      PDecl->getSetterName().print(Out);
-      first = false;
-    }
-
-    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_assign) {
-      Out << (first ? ' ' : ',') << "assign";
-      first = false;
-    }
-
-    if (PDecl->getPropertyAttributes() &
-        ObjCPropertyDecl::OBJC_PR_readwrite) {
-      Out << (first ? ' ' : ',') << "readwrite";
-      first = false;
-    }
-
-    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_retain) {
-      Out << (first ? ' ' : ',') << "retain";
-      first = false;
-    }
-
-    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_strong) {
-      Out << (first ? ' ' : ',') << "strong";
-      first = false;
-    }
-
-    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_copy) {
-      Out << (first ? ' ' : ',') << "copy";
+    Out << "(";
+    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_class) {
+      Out << (first ? "" : ", ") << "class";
       first = false;
     }
 
     if (PDecl->getPropertyAttributes() &
         ObjCPropertyDecl::OBJC_PR_nonatomic) {
-      Out << (first ? ' ' : ',') << "nonatomic";
+      Out << (first ? "" : ", ") << "nonatomic";
       first = false;
     }
     if (PDecl->getPropertyAttributes() &
         ObjCPropertyDecl::OBJC_PR_atomic) {
-      Out << (first ? ' ' : ',') << "atomic";
+      Out << (first ? "" : ", ") << "atomic";
       first = false;
     }
-    
+
+    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_assign) {
+      Out << (first ? "" : ", ") << "assign";
+      first = false;
+    }
+    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_retain) {
+      Out << (first ? "" : ", ") << "retain";
+      first = false;
+    }
+
+    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_strong) {
+      Out << (first ? "" : ", ") << "strong";
+      first = false;
+    }
+    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_copy) {
+      Out << (first ? "" : ", ") << "copy";
+      first = false;
+    }
+    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_weak) {
+      Out << (first ? "" : ", ") << "weak";
+      first = false;
+    }
+    if (PDecl->getPropertyAttributes()
+        & ObjCPropertyDecl::OBJC_PR_unsafe_unretained) {
+      Out << (first ? "" : ", ") << "unsafe_unretained";
+      first = false;
+    }
+
+    if (PDecl->getPropertyAttributes() &
+        ObjCPropertyDecl::OBJC_PR_readwrite) {
+      Out << (first ? "" : ", ") << "readwrite";
+      first = false;
+    }
+    if (PDecl->getPropertyAttributes() &
+        ObjCPropertyDecl::OBJC_PR_readonly) {
+      Out << (first ? "" : ", ") << "readonly";
+      first = false;
+    }
+
+    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_getter) {
+      Out << (first ? "" : ", ") << "getter = ";
+      PDecl->getGetterName().print(Out);
+      first = false;
+    }
+    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_setter) {
+      Out << (first ? "" : ", ") << "setter = ";
+      PDecl->getSetterName().print(Out);
+      first = false;
+    }
+
     if (PDecl->getPropertyAttributes() &
         ObjCPropertyDecl::OBJC_PR_nullability) {
       if (auto nullability = AttributedType::stripOuterNullability(T)) {
         if (*nullability == NullabilityKind::Unspecified &&
             (PDecl->getPropertyAttributes() &
                ObjCPropertyDecl::OBJC_PR_null_resettable)) {
-          Out << (first ? ' ' : ',') << "null_resettable";
+          Out << (first ? "" : ", ") << "null_resettable";
         } else {
-          Out << (first ? ' ' : ',')
+          Out << (first ? "" : ", ")
               << getNullabilitySpelling(*nullability, true);
         }
         first = false;
       }
     }
 
-    if (PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_class) {
-      Out << (first ? ' ' : ',') << "class";
-      first = false;
-    }
-
     (void) first; // Silence dead store warning due to idiomatic code.
-    Out << " )";
+    Out << ")";
   }
-  Out << ' ' << PDecl->getASTContext().getUnqualifiedObjCPointerType(T).
-                  getAsString(Policy) << ' ' << *PDecl;
+  std::string TypeStr = PDecl->getASTContext().getUnqualifiedObjCPointerType(T).
+      getAsString(Policy);
+  Out << ' ' << TypeStr;
+  if (!StringRef(TypeStr).endswith("*"))
+    Out << ' ';
+  Out << *PDecl;
   if (Policy.PolishForDeclaration)
     Out << ';';
 }
@@ -1540,18 +1612,41 @@ void DeclPrinter::VisitOMPThreadPrivateDecl(OMPThreadPrivateDecl *D) {
   }
 }
 
+void DeclPrinter::VisitOMPAllocateDecl(OMPAllocateDecl *D) {
+  Out << "#pragma omp allocate";
+  if (!D->varlist_empty()) {
+    for (OMPAllocateDecl::varlist_iterator I = D->varlist_begin(),
+                                           E = D->varlist_end();
+         I != E; ++I) {
+      Out << (I == D->varlist_begin() ? '(' : ',');
+      NamedDecl *ND = cast<DeclRefExpr>(*I)->getDecl();
+      ND->printQualifiedName(Out);
+    }
+    Out << ")";
+  }
+  if (!D->clauselist_empty()) {
+    Out << " ";
+    OMPClausePrinter Printer(Out, Policy);
+    for (OMPClause *C : D->clauselists())
+      Printer.Visit(C);
+  }
+}
+
+void DeclPrinter::VisitOMPRequiresDecl(OMPRequiresDecl *D) {
+  Out << "#pragma omp requires ";
+  if (!D->clauselist_empty()) {
+    OMPClausePrinter Printer(Out, Policy);
+    for (auto I = D->clauselist_begin(), E = D->clauselist_end(); I != E; ++I)
+      Printer.Visit(*I);
+  }
+}
+
 void DeclPrinter::VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D) {
   if (!D->isInvalidDecl()) {
     Out << "#pragma omp declare reduction (";
     if (D->getDeclName().getNameKind() == DeclarationName::CXXOperatorName) {
-      static const char *const OperatorNames[NUM_OVERLOADED_OPERATORS] = {
-          nullptr,
-#define OVERLOADED_OPERATOR(Name, Spelling, Token, Unary, Binary, MemberOnly)  \
-          Spelling,
-#include "clang/Basic/OperatorKinds.def"
-      };
       const char *OpName =
-          OperatorNames[D->getDeclName().getCXXOverloadedOperator()];
+          getOperatorSpelling(D->getDeclName().getCXXOverloadedOperator());
       assert(OpName && "not an overloaded operator");
       Out << OpName;
     } else {
@@ -1579,6 +1674,25 @@ void DeclPrinter::VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D) {
       if (D->getInitializerKind() == OMPDeclareReductionDecl::DirectInit)
         Out << ")";
       Out << ")";
+    }
+  }
+}
+
+void DeclPrinter::VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D) {
+  if (!D->isInvalidDecl()) {
+    Out << "#pragma omp declare mapper (";
+    D->printName(Out);
+    Out << " : ";
+    D->getType().print(Out, Policy);
+    Out << " ";
+    Out << D->getVarName();
+    Out << ")";
+    if (!D->clauselist_empty()) {
+      OMPClausePrinter Printer(Out, Policy);
+      for (auto *C : D->clauselists()) {
+        Out << " ";
+        Printer.Visit(C);
+      }
     }
   }
 }

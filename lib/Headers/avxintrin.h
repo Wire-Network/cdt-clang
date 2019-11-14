@@ -1,22 +1,8 @@
 /*===---- avxintrin.h - AVX intrinsics -------------------------------------===
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+ * See https://llvm.org/LICENSE.txt for license information.
+ * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  *
  *===-----------------------------------------------------------------------===
  */
@@ -45,12 +31,17 @@ typedef unsigned char __v32qu __attribute__ ((__vector_size__ (32)));
  * appear in the interface though. */
 typedef signed char __v32qs __attribute__((__vector_size__(32)));
 
-typedef float __m256 __attribute__ ((__vector_size__ (32)));
-typedef double __m256d __attribute__((__vector_size__(32)));
-typedef long long __m256i __attribute__((__vector_size__(32)));
+typedef float __m256 __attribute__ ((__vector_size__ (32), __aligned__(32)));
+typedef double __m256d __attribute__((__vector_size__(32), __aligned__(32)));
+typedef long long __m256i __attribute__((__vector_size__(32), __aligned__(32)));
+
+typedef float __m256_u __attribute__ ((__vector_size__ (32), __aligned__(1)));
+typedef double __m256d_u __attribute__((__vector_size__(32), __aligned__(1)));
+typedef long long __m256i_u __attribute__((__vector_size__(32), __aligned__(1)));
 
 /* Define the default attributes for the functions in this file. */
-#define __DEFAULT_FN_ATTRS __attribute__((__always_inline__, __nodebug__, __target__("avx")))
+#define __DEFAULT_FN_ATTRS __attribute__((__always_inline__, __nodebug__, __target__("avx"), __min_vector_width__(256)))
+#define __DEFAULT_FN_ATTRS128 __attribute__((__always_inline__, __nodebug__, __target__("avx"), __min_vector_width__(128)))
 
 /* Arithmetic */
 /// Adds two 256-bit vectors of [4 x double].
@@ -780,7 +771,7 @@ _mm256_hsub_ps(__m256 __a, __m256 __b)
 ///      1: Bits [127:64] of the source are copied to bits [127:64] of the
 ///         returned vector.
 /// \returns A 128-bit vector of [2 x double] containing the copied values.
-static __inline __m128d __DEFAULT_FN_ATTRS
+static __inline __m128d __DEFAULT_FN_ATTRS128
 _mm_permutevar_pd(__m128d __a, __m128i __c)
 {
   return (__m128d)__builtin_ia32_vpermilvarpd((__v2df)__a, (__v2di)__c);
@@ -873,7 +864,7 @@ _mm256_permutevar_pd(__m256d __a, __m256i __c)
 ///      11: Bits [127:96] of the source are copied to bits [127:96] of the
 ///          returned vector.
 /// \returns A 128-bit vector of [4 x float] containing the copied values.
-static __inline __m128 __DEFAULT_FN_ATTRS
+static __inline __m128 __DEFAULT_FN_ATTRS128
 _mm_permutevar_ps(__m128 __a, __m128i __c)
 {
   return (__m128)__builtin_ia32_vpermilvarps((__v4sf)__a, (__v4si)__c);
@@ -2497,7 +2488,7 @@ _mm256_unpacklo_ps(__m256 __a, __m256 __b)
 /// \param __b
 ///    A 128-bit vector of [2 x double].
 /// \returns the ZF flag in the EFLAGS register.
-static __inline int __DEFAULT_FN_ATTRS
+static __inline int __DEFAULT_FN_ATTRS128
 _mm_testz_pd(__m128d __a, __m128d __b)
 {
   return __builtin_ia32_vtestzpd((__v2df)__a, (__v2df)__b);
@@ -2526,7 +2517,7 @@ _mm_testz_pd(__m128d __a, __m128d __b)
 /// \param __b
 ///    A 128-bit vector of [2 x double].
 /// \returns the CF flag in the EFLAGS register.
-static __inline int __DEFAULT_FN_ATTRS
+static __inline int __DEFAULT_FN_ATTRS128
 _mm_testc_pd(__m128d __a, __m128d __b)
 {
   return __builtin_ia32_vtestcpd((__v2df)__a, (__v2df)__b);
@@ -2556,7 +2547,7 @@ _mm_testc_pd(__m128d __a, __m128d __b)
 /// \param __b
 ///    A 128-bit vector of [2 x double].
 /// \returns 1 if both the ZF and CF flags are set to 0, otherwise returns 0.
-static __inline int __DEFAULT_FN_ATTRS
+static __inline int __DEFAULT_FN_ATTRS128
 _mm_testnzc_pd(__m128d __a, __m128d __b)
 {
   return __builtin_ia32_vtestnzcpd((__v2df)__a, (__v2df)__b);
@@ -2585,7 +2576,7 @@ _mm_testnzc_pd(__m128d __a, __m128d __b)
 /// \param __b
 ///    A 128-bit vector of [4 x float].
 /// \returns the ZF flag.
-static __inline int __DEFAULT_FN_ATTRS
+static __inline int __DEFAULT_FN_ATTRS128
 _mm_testz_ps(__m128 __a, __m128 __b)
 {
   return __builtin_ia32_vtestzps((__v4sf)__a, (__v4sf)__b);
@@ -2614,7 +2605,7 @@ _mm_testz_ps(__m128 __a, __m128 __b)
 /// \param __b
 ///    A 128-bit vector of [4 x float].
 /// \returns the CF flag.
-static __inline int __DEFAULT_FN_ATTRS
+static __inline int __DEFAULT_FN_ATTRS128
 _mm_testc_ps(__m128 __a, __m128 __b)
 {
   return __builtin_ia32_vtestcps((__v4sf)__a, (__v4sf)__b);
@@ -2644,7 +2635,7 @@ _mm_testc_ps(__m128 __a, __m128 __b)
 /// \param __b
 ///    A 128-bit vector of [4 x float].
 /// \returns 1 if both the ZF and CF flags are set to 0, otherwise returns 0.
-static __inline int __DEFAULT_FN_ATTRS
+static __inline int __DEFAULT_FN_ATTRS128
 _mm_testnzc_ps(__m128 __a, __m128 __b)
 {
   return __builtin_ia32_vtestnzcps((__v4sf)__a, (__v4sf)__b);
@@ -2948,7 +2939,7 @@ _mm256_movemask_ps(__m256 __a)
 /// \headerfile <x86intrin.h>
 ///
 /// This intrinsic corresponds to the <c> VZEROALL </c> instruction.
-static __inline void __DEFAULT_FN_ATTRS
+static __inline void __attribute__((__always_inline__, __nodebug__, __target__("avx")))
 _mm256_zeroall(void)
 {
   __builtin_ia32_vzeroall();
@@ -2959,7 +2950,7 @@ _mm256_zeroall(void)
 /// \headerfile <x86intrin.h>
 ///
 /// This intrinsic corresponds to the <c> VZEROUPPER </c> instruction.
-static __inline void __DEFAULT_FN_ATTRS
+static __inline void __attribute__((__always_inline__, __nodebug__, __target__("avx")))
 _mm256_zeroupper(void)
 {
   __builtin_ia32_vzeroupper();
@@ -2978,7 +2969,7 @@ _mm256_zeroupper(void)
 ///    The single-precision floating point value to be broadcast.
 /// \returns A 128-bit vector of [4 x float] whose 32-bit elements are set
 ///    equal to the broadcast value.
-static __inline __m128 __DEFAULT_FN_ATTRS
+static __inline __m128 __DEFAULT_FN_ATTRS128
 _mm_broadcast_ss(float const *__a)
 {
   float __f = *__a;
@@ -3112,7 +3103,7 @@ static __inline __m256d __DEFAULT_FN_ATTRS
 _mm256_loadu_pd(double const *__p)
 {
   struct __loadu_pd {
-    __m256d __v;
+    __m256d_u __v;
   } __attribute__((__packed__, __may_alias__));
   return ((struct __loadu_pd*)__p)->__v;
 }
@@ -3132,7 +3123,7 @@ static __inline __m256 __DEFAULT_FN_ATTRS
 _mm256_loadu_ps(float const *__p)
 {
   struct __loadu_ps {
-    __m256 __v;
+    __m256_u __v;
   } __attribute__((__packed__, __may_alias__));
   return ((struct __loadu_ps*)__p)->__v;
 }
@@ -3165,10 +3156,10 @@ _mm256_load_si256(__m256i const *__p)
 ///    A pointer to a 256-bit integer vector containing integer values.
 /// \returns A 256-bit integer vector containing the moved values.
 static __inline __m256i __DEFAULT_FN_ATTRS
-_mm256_loadu_si256(__m256i const *__p)
+_mm256_loadu_si256(__m256i_u const *__p)
 {
   struct __loadu_si256 {
-    __m256i __v;
+    __m256i_u __v;
   } __attribute__((__packed__, __may_alias__));
   return ((struct __loadu_si256*)__p)->__v;
 }
@@ -3245,7 +3236,7 @@ static __inline void __DEFAULT_FN_ATTRS
 _mm256_storeu_pd(double *__p, __m256d __a)
 {
   struct __storeu_pd {
-    __m256d __v;
+    __m256d_u __v;
   } __attribute__((__packed__, __may_alias__));
   ((struct __storeu_pd*)__p)->__v = __a;
 }
@@ -3265,7 +3256,7 @@ static __inline void __DEFAULT_FN_ATTRS
 _mm256_storeu_ps(float *__p, __m256 __a)
 {
   struct __storeu_ps {
-    __m256 __v;
+    __m256_u __v;
   } __attribute__((__packed__, __may_alias__));
   ((struct __storeu_ps*)__p)->__v = __a;
 }
@@ -3300,10 +3291,10 @@ _mm256_store_si256(__m256i *__p, __m256i __a)
 /// \param __a
 ///    A 256-bit integer vector containing the values to be moved.
 static __inline void __DEFAULT_FN_ATTRS
-_mm256_storeu_si256(__m256i *__p, __m256i __a)
+_mm256_storeu_si256(__m256i_u *__p, __m256i __a)
 {
   struct __storeu_si256 {
-    __m256i __v;
+    __m256i_u __v;
   } __attribute__((__packed__, __may_alias__));
   ((struct __storeu_si256*)__p)->__v = __a;
 }
@@ -3327,7 +3318,7 @@ _mm256_storeu_si256(__m256i *__p, __m256i __a)
 ///    corresponding value in the memory location is not loaded and the
 ///    corresponding field in the return value is set to zero.
 /// \returns A 128-bit vector of [2 x double] containing the loaded values.
-static __inline __m128d __DEFAULT_FN_ATTRS
+static __inline __m128d __DEFAULT_FN_ATTRS128
 _mm_maskload_pd(double const *__p, __m128i __m)
 {
   return (__m128d)__builtin_ia32_maskloadpd((const __v2df *)__p, (__v2di)__m);
@@ -3376,7 +3367,7 @@ _mm256_maskload_pd(double const *__p, __m256i __m)
 ///    corresponding value in the memory location is not loaded and the
 ///    corresponding field in the return value is set to zero.
 /// \returns A 128-bit vector of [4 x float] containing the loaded values.
-static __inline __m128 __DEFAULT_FN_ATTRS
+static __inline __m128 __DEFAULT_FN_ATTRS128
 _mm_maskload_ps(float const *__p, __m128i __m)
 {
   return (__m128)__builtin_ia32_maskloadps((const __v4sf *)__p, (__v4si)__m);
@@ -3449,7 +3440,7 @@ _mm256_maskstore_ps(float *__p, __m256i __m, __m256 __a)
 ///    changed.
 /// \param __a
 ///    A 128-bit vector of [2 x double] containing the values to be stored.
-static __inline void __DEFAULT_FN_ATTRS
+static __inline void __DEFAULT_FN_ATTRS128
 _mm_maskstore_pd(double *__p, __m128i __m, __m128d __a)
 {
   __builtin_ia32_maskstorepd((__v2df *)__p, (__v2di)__m, (__v2df)__a);
@@ -3497,7 +3488,7 @@ _mm256_maskstore_pd(double *__p, __m256i __m, __m256d __a)
 ///    changed.
 /// \param __a
 ///    A 128-bit vector of [4 x float] containing the values to be stored.
-static __inline void __DEFAULT_FN_ATTRS
+static __inline void __DEFAULT_FN_ATTRS128
 _mm_maskstore_ps(float *__p, __m128i __m, __m128 __a)
 {
   __builtin_ia32_maskstoreps((__v4sf *)__p, (__v4si)__m, (__v4sf)__a);
@@ -4833,7 +4824,7 @@ _mm256_loadu2_m128d(double const *__addr_hi, double const *__addr_lo)
 ///    address of the memory location does not have to be aligned.
 /// \returns A 256-bit integer vector containing the concatenated result.
 static __inline __m256i __DEFAULT_FN_ATTRS
-_mm256_loadu2_m128i(__m128i const *__addr_hi, __m128i const *__addr_lo)
+_mm256_loadu2_m128i(__m128i_u const *__addr_hi, __m128i_u const *__addr_lo)
 {
   __m256i __v256 = _mm256_castsi128_si256(_mm_loadu_si128(__addr_lo));
   return _mm256_insertf128_si256(__v256, _mm_loadu_si128(__addr_hi), 1);
@@ -4917,7 +4908,7 @@ _mm256_storeu2_m128d(double *__addr_hi, double *__addr_lo, __m256d __a)
 /// \param __a
 ///    A 256-bit integer vector.
 static __inline void __DEFAULT_FN_ATTRS
-_mm256_storeu2_m128i(__m128i *__addr_hi, __m128i *__addr_lo, __m256i __a)
+_mm256_storeu2_m128i(__m128i_u *__addr_hi, __m128i_u *__addr_lo, __m256i __a)
 {
   __m128i __v128;
 
@@ -4966,7 +4957,7 @@ _mm256_set_m128 (__m128 __hi, __m128 __lo)
 static __inline __m256d __DEFAULT_FN_ATTRS
 _mm256_set_m128d (__m128d __hi, __m128d __lo)
 {
-  return (__m256d)_mm256_set_m128((__m128)__hi, (__m128)__lo);
+  return (__m256d) __builtin_shufflevector((__v2df)__lo, (__v2df)__hi, 0, 1, 2, 3);
 }
 
 /// Constructs a 256-bit integer vector by concatenating two 128-bit
@@ -4986,7 +4977,7 @@ _mm256_set_m128d (__m128d __hi, __m128d __lo)
 static __inline __m256i __DEFAULT_FN_ATTRS
 _mm256_set_m128i (__m128i __hi, __m128i __lo)
 {
-  return (__m256i)_mm256_set_m128((__m128)__hi, (__m128)__lo);
+  return (__m256i) __builtin_shufflevector((__v2di)__lo, (__v2di)__hi, 0, 1, 2, 3);
 }
 
 /// Constructs a 256-bit floating-point vector of [8 x float] by
@@ -5032,7 +5023,7 @@ _mm256_setr_m128 (__m128 __lo, __m128 __hi)
 static __inline __m256d __DEFAULT_FN_ATTRS
 _mm256_setr_m128d (__m128d __lo, __m128d __hi)
 {
-  return (__m256d)_mm256_set_m128((__m128)__hi, (__m128)__lo);
+  return (__m256d)_mm256_set_m128d(__hi, __lo);
 }
 
 /// Constructs a 256-bit integer vector by concatenating two 128-bit
@@ -5053,9 +5044,10 @@ _mm256_setr_m128d (__m128d __lo, __m128d __hi)
 static __inline __m256i __DEFAULT_FN_ATTRS
 _mm256_setr_m128i (__m128i __lo, __m128i __hi)
 {
-  return (__m256i)_mm256_set_m128((__m128)__hi, (__m128)__lo);
+  return (__m256i)_mm256_set_m128i(__hi, __lo);
 }
 
 #undef __DEFAULT_FN_ATTRS
+#undef __DEFAULT_FN_ATTRS128
 
 #endif /* __AVXINTRIN_H */

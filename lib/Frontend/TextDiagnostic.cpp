@@ -1,9 +1,8 @@
 //===--- TextDiagnostic.cpp - Text Diagnostic Pretty-Printing -------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -100,7 +99,7 @@ printableTextForNextCharacter(StringRef SourceLine, size_t *i,
                               unsigned TabStop) {
   assert(i && "i must not be null");
   assert(*i<SourceLine.size() && "must point to a valid index");
-  
+
   if (SourceLine[*i]=='\t') {
     assert(0 < TabStop && TabStop <= DiagnosticOptions::MaxTabStop &&
            "Invalid -ftabstop value");
@@ -118,7 +117,7 @@ printableTextForNextCharacter(StringRef SourceLine, size_t *i,
   unsigned char const *begin, *end;
   begin = reinterpret_cast<unsigned char const *>(&*(SourceLine.begin() + *i));
   end = begin + (SourceLine.size() - *i);
-  
+
   if (llvm::isLegalUTF8Sequence(begin, end)) {
     llvm::UTF32 c;
     llvm::UTF32 *cptr = &c;
@@ -203,7 +202,7 @@ static void byteToColumn(StringRef SourceLine, unsigned TabStop,
     out.resize(1u,0);
     return;
   }
-  
+
   out.resize(SourceLine.size()+1, -1);
 
   int columns = 0;
@@ -255,10 +254,10 @@ namespace {
 struct SourceColumnMap {
   SourceColumnMap(StringRef SourceLine, unsigned TabStop)
   : m_SourceLine(SourceLine) {
-    
+
     ::byteToColumn(SourceLine, TabStop, m_byteToColumn);
     ::columnToByte(SourceLine, TabStop, m_columnToByte);
-    
+
     assert(m_byteToColumn.size()==SourceLine.size()+1);
     assert(0 < m_byteToColumn.size() && 0 < m_columnToByte.size());
     assert(m_byteToColumn.size()
@@ -309,7 +308,7 @@ struct SourceColumnMap {
   StringRef getSourceLine() const {
     return m_SourceLine;
   }
-  
+
 private:
   const std::string m_SourceLine;
   SmallVector<int,200> m_byteToColumn;
@@ -334,8 +333,7 @@ static void selectInterestingSourceRegion(std::string &SourceLine,
 
   // No special characters are allowed in CaretLine.
   assert(CaretLine.end() ==
-         std::find_if(CaretLine.begin(), CaretLine.end(),
-                      [](char c) { return c < ' ' || '~' < c; }));
+         llvm::find_if(CaretLine, [](char c) { return c < ' ' || '~' < c; }));
 
   // Find the slice that we need to display the full caret line
   // correctly.
@@ -684,7 +682,7 @@ void TextDiagnostic::emitDiagnosticMessage(
 
   if (DiagOpts->ShowColors)
     OS.resetColor();
-  
+
   printDiagnosticLevel(OS, Level, DiagOpts->ShowColors,
                        DiagOpts->CLFallbackMode);
   printDiagnosticMessage(OS,
@@ -767,7 +765,28 @@ void TextDiagnostic::emitFilename(StringRef Filename, const SourceManager &SM) {
     const DirectoryEntry *Dir = SM.getFileManager().getDirectory(
         llvm::sys::path::parent_path(Filename));
     if (Dir) {
+      // We want to print a simplified absolute path, i. e. without "dots".
+      //
+      // The hardest part here are the paths like "<part1>/<link>/../<part2>".
+      // On Unix-like systems, we cannot just collapse "<link>/..", because
+      // paths are resolved sequentially, and, thereby, the path
+      // "<part1>/<part2>" may point to a different location. That is why
+      // we use FileManager::getCanonicalName(), which expands all indirections
+      // with llvm::sys::fs::real_path() and caches the result.
+      //
+      // On the other hand, it would be better to preserve as much of the
+      // original path as possible, because that helps a user to recognize it.
+      // real_path() expands all links, which sometimes too much. Luckily,
+      // on Windows we can just use llvm::sys::path::remove_dots(), because,
+      // on that system, both aforementioned paths point to the same place.
+#ifdef _WIN32
+      SmallString<4096> DirName = Dir->getName();
+      llvm::sys::fs::make_absolute(DirName);
+      llvm::sys::path::native(DirName);
+      llvm::sys::path::remove_dots(DirName, /* remove_dot_dot */ true);
+#else
       StringRef DirName = SM.getFileManager().getCanonicalName(Dir);
+#endif
       llvm::sys::path::append(AbsoluteFilename, DirName,
                               llvm::sys::path::filename(Filename));
       Filename = StringRef(AbsoluteFilename.data(), AbsoluteFilename.size());
@@ -793,8 +812,6 @@ void TextDiagnostic::emitDiagnosticLoc(FullSourceLoc Loc, PresumedLoc PLoc,
       const FileEntry *FE = Loc.getFileEntry();
       if (FE && FE->isValid()) {
         emitFilename(FE->getName(), Loc.getManager());
-        if (FE->isInPCH())
-          OS << " (in PCH)";
         OS << ": ";
       }
     }
@@ -838,7 +855,7 @@ void TextDiagnostic::emitDiagnosticLoc(FullSourceLoc Loc, PresumedLoc PLoc,
     if (LangOpts.MSCompatibilityVersion &&
         !LangOpts.isCompatibleWithMSVC(LangOptions::MSVC2015))
       OS << ' ';
-    OS << ": ";
+    OS << ':';
     break;
   }
 
@@ -891,7 +908,7 @@ void TextDiagnostic::emitIncludeLocation(FullSourceLoc Loc, PresumedLoc PLoc) {
     OS << "In file included from " << PLoc.getFilename() << ':'
        << PLoc.getLine() << ":\n";
   else
-    OS << "In included file:\n"; 
+    OS << "In included file:\n";
 }
 
 void TextDiagnostic::emitImportLocation(FullSourceLoc Loc, PresumedLoc PLoc,
@@ -1269,15 +1286,15 @@ void TextDiagnostic::emitSnippet(StringRef line) {
     return;
 
   size_t i = 0;
-  
+
   std::string to_print;
   bool print_reversed = false;
-  
+
   while (i<line.size()) {
     std::pair<SmallString<16>,bool> res
         = printableTextForNextCharacter(line, &i, DiagOpts->TabStop);
     bool was_printable = res.second;
-    
+
     if (DiagOpts->ShowColors && was_printable == print_reversed) {
       if (print_reversed)
         OS.reverseColor();
@@ -1286,17 +1303,17 @@ void TextDiagnostic::emitSnippet(StringRef line) {
       if (DiagOpts->ShowColors)
         OS.resetColor();
     }
-    
+
     print_reversed = !was_printable;
     to_print += res.first.str();
   }
-  
+
   if (print_reversed && DiagOpts->ShowColors)
     OS.reverseColor();
   OS << to_print;
   if (print_reversed && DiagOpts->ShowColors)
     OS.resetColor();
-  
+
   OS << '\n';
 }
 

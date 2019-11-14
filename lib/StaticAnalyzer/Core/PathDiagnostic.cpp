@@ -1,9 +1,8 @@
 //===- PathDiagnostic.cpp - Path-Specific Diagnostic Handling -------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -91,6 +90,8 @@ PathDiagnosticMacroPiece::~PathDiagnosticMacroPiece() = default;
 
 PathDiagnosticNotePiece::~PathDiagnosticNotePiece() = default;
 
+PathDiagnosticPopUpPiece::~PathDiagnosticPopUpPiece() = default;
+
 void PathPieces::flattenTo(PathPieces &Primary, PathPieces &Current,
                            bool ShouldFlattenMacros) const {
   for (auto &Piece : *this) {
@@ -120,6 +121,7 @@ void PathPieces::flattenTo(PathPieces &Primary, PathPieces &Current,
     case PathDiagnosticPiece::Event:
     case PathDiagnosticPiece::ControlFlow:
     case PathDiagnosticPiece::Note:
+    case PathDiagnosticPiece::PopUp:
       Current.push_back(Piece);
       break;
     }
@@ -370,15 +372,16 @@ static Optional<bool> comparePiece(const PathDiagnosticPiece &X,
     case PathDiagnosticPiece::ControlFlow:
       return compareControlFlow(cast<PathDiagnosticControlFlowPiece>(X),
                                 cast<PathDiagnosticControlFlowPiece>(Y));
-    case PathDiagnosticPiece::Event:
-    case PathDiagnosticPiece::Note:
-      return None;
     case PathDiagnosticPiece::Macro:
       return compareMacro(cast<PathDiagnosticMacroPiece>(X),
                           cast<PathDiagnosticMacroPiece>(Y));
     case PathDiagnosticPiece::Call:
       return compareCall(cast<PathDiagnosticCallPiece>(X),
                          cast<PathDiagnosticCallPiece>(Y));
+    case PathDiagnosticPiece::Event:
+    case PathDiagnosticPiece::Note:
+    case PathDiagnosticPiece::PopUp:
+      return None;
   }
   llvm_unreachable("all cases handled");
 }
@@ -406,11 +409,15 @@ static bool compareCrossTUSourceLocs(FullSourceLoc XL, FullSourceLoc YL) {
   std::pair<bool, bool> InSameTU = SM.isInTheSameTranslationUnit(XOffs, YOffs);
   if (InSameTU.first)
     return XL.isBeforeInTranslationUnitThan(YL);
-  const FileEntry *XFE = SM.getFileEntryForID(XL.getFileID());
-  const FileEntry *YFE = SM.getFileEntryForID(YL.getFileID());
+  const FileEntry *XFE = SM.getFileEntryForID(XL.getSpellingLoc().getFileID());
+  const FileEntry *YFE = SM.getFileEntryForID(YL.getSpellingLoc().getFileID());
   if (!XFE || !YFE)
     return XFE && !YFE;
-  return XFE->getName() < YFE->getName();
+  int NameCmp = XFE->getName().compare(YFE->getName());
+  if (NameCmp != 0)
+    return NameCmp == -1;
+  // Last resort: Compare raw file IDs that are possibly expansions.
+  return XL.getFileID() < YL.getFileID();
 }
 
 static bool compare(const PathDiagnostic &X, const PathDiagnostic &Y) {
@@ -532,7 +539,7 @@ PathDiagnosticConsumer::FilesMade::getFiles(const PathDiagnostic &PD) {
 static SourceLocation getValidSourceLocation(const Stmt* S,
                                              LocationOrAnalysisDeclContext LAC,
                                              bool UseEnd = false) {
-  SourceLocation L = UseEnd ? S->getLocEnd() : S->getLocStart();
+  SourceLocation L = UseEnd ? S->getEndLoc() : S->getBeginLoc();
   assert(!LAC.isNull() && "A valid LocationContext or AnalysisDeclContext should "
                           "be passed to PathDiagnosticLocation upon creation.");
 
@@ -558,16 +565,18 @@ static SourceLocation getValidSourceLocation(const Stmt* S,
       if (!Parent) {
         const Stmt *Body = ADC->getBody();
         if (Body)
-          L = Body->getLocStart();
+          L = Body->getBeginLoc();
         else
-          L = ADC->getDecl()->getLocEnd();
+          L = ADC->getDecl()->getEndLoc();
         break;
       }
 
-      L = UseEnd ? Parent->getLocEnd() : Parent->getLocStart();
+      L = UseEnd ? Parent->getEndLoc() : Parent->getBeginLoc();
     } while (!L.isValid());
   }
 
+  // FIXME: Ironically, this assert actually fails in some cases.
+  //assert(L.isValid());
   return L;
 }
 
@@ -631,7 +640,7 @@ getLocationForCaller(const StackFrameContext *SFC,
 PathDiagnosticLocation
 PathDiagnosticLocation::createBegin(const Decl *D,
                                     const SourceManager &SM) {
-  return PathDiagnosticLocation(D->getLocStart(), SM, SingleLocK);
+  return PathDiagnosticLocation(D->getBeginLoc(), SM, SingleLocK);
 }
 
 PathDiagnosticLocation
@@ -668,7 +677,15 @@ PathDiagnosticLocation::createConditionalColonLoc(
 PathDiagnosticLocation
 PathDiagnosticLocation::createMemberLoc(const MemberExpr *ME,
                                         const SourceManager &SM) {
-  return PathDiagnosticLocation(ME->getMemberLoc(), SM, SingleLocK);
+
+  assert(ME->getMemberLoc().isValid() || ME->getBeginLoc().isValid());
+
+  // In some cases, getMemberLoc isn't valid -- in this case we'll return with
+  // some other related valid SourceLocation.
+  if (ME->getMemberLoc().isValid())
+    return PathDiagnosticLocation(ME->getMemberLoc(), SM, SingleLocK);
+
+  return PathDiagnosticLocation(ME->getBeginLoc(), SM, SingleLocK);
 }
 
 PathDiagnosticLocation
@@ -691,7 +708,7 @@ PathDiagnosticLocation::createDeclBegin(const LocationContext *LC,
   // FIXME: Should handle CXXTryStmt if analyser starts supporting C++.
   if (const auto *CS = dyn_cast_or_null<CompoundStmt>(LC->getDecl()->getBody()))
     if (!CS->body_empty()) {
-      SourceLocation Loc = (*CS->body_begin())->getLocStart();
+      SourceLocation Loc = (*CS->body_begin())->getBeginLoc();
       return PathDiagnosticLocation(Loc, SM, SingleLocK);
     }
 
@@ -711,7 +728,24 @@ PathDiagnosticLocation::create(const ProgramPoint& P,
   const Stmt* S = nullptr;
   if (Optional<BlockEdge> BE = P.getAs<BlockEdge>()) {
     const CFGBlock *BSrc = BE->getSrc();
-    S = BSrc->getTerminatorCondition();
+    if (BSrc->getTerminator().isVirtualBaseBranch()) {
+      // TODO: VirtualBaseBranches should also appear for destructors.
+      // In this case we should put the diagnostic at the end of decl.
+      return PathDiagnosticLocation::createBegin(
+          P.getLocationContext()->getDecl(), SMng);
+
+    } else {
+      S = BSrc->getTerminatorCondition();
+      if (!S) {
+        // If the BlockEdge has no terminator condition statement but its
+        // source is the entry of the CFG (e.g. a checker crated the branch at
+        // the beginning of a function), use the function's declaration instead.
+        assert(BSrc == &BSrc->getParent()->getEntry() && "CFGBlock has no "
+               "TerminatorCondition and is not the enrty block of the CFG");
+        return PathDiagnosticLocation::createBegin(
+            P.getLocationContext()->getDecl(), SMng);
+      }
+    }
   } else if (Optional<StmtPoint> SP = P.getAs<StmtPoint>()) {
     S = SP->getStmt();
     if (P.getAs<PostStmtPurgeDeadSymbols>())
@@ -719,6 +753,8 @@ PathDiagnosticLocation::create(const ProgramPoint& P,
   } else if (Optional<PostInitializer> PIP = P.getAs<PostInitializer>()) {
     return PathDiagnosticLocation(PIP->getInitializer()->getSourceLocation(),
                                   SMng);
+  } else if (Optional<PreImplicitCall> PIC = P.getAs<PreImplicitCall>()) {
+    return PathDiagnosticLocation(PIC->getLocation(), SMng);
   } else if (Optional<PostImplicitCall> PIE = P.getAs<PostImplicitCall>()) {
     return PathDiagnosticLocation(PIE->getLocation(), SMng);
   } else if (Optional<CallEnter> CE = P.getAs<CallEnter>()) {
@@ -729,15 +765,24 @@ PathDiagnosticLocation::create(const ProgramPoint& P,
     return getLocationForCaller(CEE->getCalleeContext(),
                                 CEE->getLocationContext(),
                                 SMng);
+  } else if (auto CEB = P.getAs<CallExitBegin>()) {
+    if (const ReturnStmt *RS = CEB->getReturnStmt())
+      return PathDiagnosticLocation::createBegin(RS, SMng,
+                                                 CEB->getLocationContext());
+    return PathDiagnosticLocation(
+        CEB->getLocationContext()->getDecl()->getSourceRange().getEnd(), SMng);
   } else if (Optional<BlockEntrance> BE = P.getAs<BlockEntrance>()) {
     CFGElement BlockFront = BE->getBlock()->front();
     if (auto StmtElt = BlockFront.getAs<CFGStmt>()) {
-      return PathDiagnosticLocation(StmtElt->getStmt()->getLocStart(), SMng);
+      return PathDiagnosticLocation(StmtElt->getStmt()->getBeginLoc(), SMng);
     } else if (auto NewAllocElt = BlockFront.getAs<CFGNewAllocator>()) {
       return PathDiagnosticLocation(
-          NewAllocElt->getAllocatorExpr()->getLocStart(), SMng);
+          NewAllocElt->getAllocatorExpr()->getBeginLoc(), SMng);
     }
     llvm_unreachable("Unexpected CFG element at front of block");
+  } else if (Optional<FunctionExitPoint> FE = P.getAs<FunctionExitPoint>()) {
+    return PathDiagnosticLocation(FE->getStmt(), SMng,
+                                  FE->getLocationContext());
   } else {
     llvm_unreachable("Unexpected ProgramPoint");
   }
@@ -770,18 +815,20 @@ const Stmt *PathDiagnosticLocation::getStmt(const ExplodedNode *N) {
   }
   // Otherwise, see if the node's program point directly points to a statement.
   ProgramPoint P = N->getLocation();
-  if (Optional<StmtPoint> SP = P.getAs<StmtPoint>())
+  if (auto SP = P.getAs<StmtPoint>())
     return SP->getStmt();
-  if (Optional<BlockEdge> BE = P.getAs<BlockEdge>())
-    return BE->getSrc()->getTerminator();
-  if (Optional<CallEnter> CE = P.getAs<CallEnter>())
+  if (auto BE = P.getAs<BlockEdge>())
+    return BE->getSrc()->getTerminatorStmt();
+  if (auto CE = P.getAs<CallEnter>())
     return CE->getCallExpr();
-  if (Optional<CallExitEnd> CEE = P.getAs<CallExitEnd>())
+  if (auto CEE = P.getAs<CallExitEnd>())
     return CEE->getCalleeContext()->getCallSite();
-  if (Optional<PostInitializer> PIPP = P.getAs<PostInitializer>())
+  if (auto PIPP = P.getAs<PostInitializer>())
     return PIPP->getInitializer()->getInit();
-  if (Optional<CallExitBegin> CEB = P.getAs<CallExitBegin>())
+  if (auto CEB = P.getAs<CallExitBegin>())
     return CEB->getReturnStmt();
+  if (auto FEP = P.getAs<FunctionExitPoint>())
+    return FEP->getStmt();
 
   return nullptr;
 }
@@ -818,17 +865,21 @@ PathDiagnosticLocation
                                           const SourceManager &SM) {
   assert(N && "Cannot create a location with a null node.");
   const Stmt *S = getStmt(N);
+  const LocationContext *LC = N->getLocationContext();
 
   if (!S) {
     // If this is an implicit call, return the implicit call point location.
     if (Optional<PreImplicitCall> PIE = N->getLocationAs<PreImplicitCall>())
       return PathDiagnosticLocation(PIE->getLocation(), SM);
+    if (auto FE = N->getLocationAs<FunctionExitPoint>()) {
+      if (const ReturnStmt *RS = FE->getStmt())
+        return PathDiagnosticLocation::createBegin(RS, SM, LC);
+    }
     S = getNextStmt(N);
   }
 
   if (S) {
     ProgramPoint P = N->getLocation();
-    const LocationContext *LC = N->getLocationContext();
 
     // For member expressions, return the location of the '.' or '->'.
     if (const auto *ME = dyn_cast<MemberExpr>(S))
@@ -841,7 +892,7 @@ PathDiagnosticLocation
     if (P.getAs<PostStmtPurgeDeadSymbols>())
       return PathDiagnosticLocation::createEnd(S, SM, LC);
 
-    if (S->getLocStart().isValid())
+    if (S->getBeginLoc().isValid())
       return PathDiagnosticLocation(S, SM, LC);
     return PathDiagnosticLocation(getValidSourceLocation(S, LC), SM);
   }
@@ -900,7 +951,7 @@ PathDiagnosticRange
           const auto *DS = cast<DeclStmt>(S);
           if (DS->isSingleDecl()) {
             // Should always be the case, but we'll be defensive.
-            return SourceRange(DS->getLocStart(),
+            return SourceRange(DS->getBeginLoc(),
                                DS->getSingleDecl()->getLocation());
           }
           break;
@@ -960,7 +1011,7 @@ void PathDiagnosticLocation::flatten() {
 //===----------------------------------------------------------------------===//
 
 std::shared_ptr<PathDiagnosticCallPiece>
-PathDiagnosticCallPiece::construct(const ExplodedNode *N, const CallExitEnd &CE,
+PathDiagnosticCallPiece::construct(const CallExitEnd &CE,
                                    const SourceManager &SM) {
   const Decl *caller = CE.getLocationContext()->getDecl();
   PathDiagnosticLocation pos = getLocationForCaller(CE.getCalleeContext(),
@@ -1243,6 +1294,10 @@ void PathDiagnosticNotePiece::Profile(llvm::FoldingSetNodeID &ID) const {
   PathDiagnosticSpotPiece::Profile(ID);
 }
 
+void PathDiagnosticPopUpPiece::Profile(llvm::FoldingSetNodeID &ID) const {
+  PathDiagnosticSpotPiece::Profile(ID);
+}
+
 void PathDiagnostic::Profile(llvm::FoldingSetNodeID &ID) const {
   ID.Add(getLocation());
   ID.AddString(BugType);
@@ -1363,6 +1418,13 @@ LLVM_DUMP_METHOD void PathDiagnosticMacroPiece::dump() const {
 
 LLVM_DUMP_METHOD void PathDiagnosticNotePiece::dump() const {
   llvm::errs() << "NOTE\n--------------\n";
+  llvm::errs() << getString() << "\n";
+  llvm::errs() << " ---- at ----\n";
+  getLocation().dump();
+}
+
+LLVM_DUMP_METHOD void PathDiagnosticPopUpPiece::dump() const {
+  llvm::errs() << "POP-UP\n--------------\n";
   llvm::errs() << getString() << "\n";
   llvm::errs() << " ---- at ----\n";
   getLocation().dump();
