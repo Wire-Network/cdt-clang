@@ -395,9 +395,9 @@ bool Sema::checkStringLiteralArgumentAttr(const ParsedAttr &AL, unsigned ArgNum,
   return true;
 }
 
-static void handleEosioRicardianAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+static void handleEosioRicardianAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
-  StringRef Str, Replacement;
+  StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
@@ -406,9 +406,9 @@ static void handleEosioRicardianAttribute(Sema &S, Decl *D, const AttributeList 
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioNotifyAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+static void handleEosioNotifyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
-  StringRef Str, Replacement;
+  StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
@@ -418,9 +418,9 @@ static void handleEosioNotifyAttribute(Sema &S, Decl *D, const AttributeList &AL
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioContractAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+static void handleEosioContractAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
-  StringRef Str, Replacement;
+  StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
@@ -429,9 +429,9 @@ static void handleEosioContractAttribute(Sema &S, Decl *D, const AttributeList &
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioABIAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+static void handleEosioABIAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
-  StringRef Str, Replacement;
+  StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
@@ -441,9 +441,9 @@ static void handleEosioABIAttribute(Sema &S, Decl *D, const AttributeList &AL) {
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioWasmActionAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+static void handleEosioWasmActionAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
-  StringRef Str, Replacement;
+  StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
@@ -453,9 +453,9 @@ static void handleEosioWasmActionAttribute(Sema &S, Decl *D, const AttributeList
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioWasmNotifyAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+static void handleEosioWasmNotifyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
-  StringRef Str, Replacement;
+  StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
@@ -465,9 +465,9 @@ static void handleEosioWasmNotifyAttribute(Sema &S, Decl *D, const AttributeList
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioActionAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+static void handleEosioActionAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
-  StringRef Str, Replacement;
+  StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
@@ -477,9 +477,9 @@ static void handleEosioActionAttribute(Sema &S, Decl *D, const AttributeList &AL
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioTableAttribute(Sema &S, Decl *D, const AttributeList &AL) {
+static void handleEosioTableAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
-  StringRef Str, Replacement;
+  StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
