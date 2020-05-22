@@ -1,9 +1,8 @@
 //===--- ContinuationIndenter.h - Format C++ code ---------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -107,17 +106,17 @@ private:
   void moveStateToNewBlock(LineState &State);
 
   /// Reformats a raw string literal.
-  /// 
+  ///
   /// \returns An extra penalty induced by reformatting the token.
   unsigned reformatRawStringLiteral(const FormatToken &Current,
                                     LineState &State,
                                     const FormatStyle &RawStringStyle,
-                                    bool DryRun);
+                                    bool DryRun, bool Newline);
 
   /// If the current token is at the end of the current line, handle
   /// the transition to the next line.
   unsigned handleEndOfLine(const FormatToken &Current, LineState &State,
-                           bool DryRun, bool AllowBreak);
+                           bool DryRun, bool AllowBreak, bool Newline);
 
   /// If \p Current is a raw string that is configured to be reformatted,
   /// return the style to be used.

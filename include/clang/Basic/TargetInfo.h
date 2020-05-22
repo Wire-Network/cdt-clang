@@ -1,9 +1,8 @@
 //===--- TargetInfo.h - Expose information about the target -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -49,9 +48,118 @@ class SourceManager;
 
 namespace Builtin { struct Info; }
 
+/// Fields controlling how types are laid out in memory; these may need to
+/// be copied for targets like AMDGPU that base their ABIs on an auxiliary
+/// CPU target.
+struct TransferrableTargetInfo {
+  unsigned char PointerWidth, PointerAlign;
+  unsigned char BoolWidth, BoolAlign;
+  unsigned char IntWidth, IntAlign;
+  unsigned char HalfWidth, HalfAlign;
+  unsigned char FloatWidth, FloatAlign;
+  unsigned char DoubleWidth, DoubleAlign;
+  unsigned char LongDoubleWidth, LongDoubleAlign, Float128Align;
+  unsigned char LargeArrayMinWidth, LargeArrayAlign;
+  unsigned char LongWidth, LongAlign;
+  unsigned char LongLongWidth, LongLongAlign;
+
+  // Fixed point bit widths
+  unsigned char ShortAccumWidth, ShortAccumAlign;
+  unsigned char AccumWidth, AccumAlign;
+  unsigned char LongAccumWidth, LongAccumAlign;
+  unsigned char ShortFractWidth, ShortFractAlign;
+  unsigned char FractWidth, FractAlign;
+  unsigned char LongFractWidth, LongFractAlign;
+
+  // If true, unsigned fixed point types have the same number of fractional bits
+  // as their signed counterparts, forcing the unsigned types to have one extra
+  // bit of padding. Otherwise, unsigned fixed point types have
+  // one more fractional bit than its corresponding signed type. This is false
+  // by default.
+  bool PaddingOnUnsignedFixedPoint;
+
+  // Fixed point integral and fractional bit sizes
+  // Saturated types share the same integral/fractional bits as their
+  // corresponding unsaturated types.
+  // For simplicity, the fractional bits in a _Fract type will be one less the
+  // width of that _Fract type. This leaves all signed _Fract types having no
+  // padding and unsigned _Fract types will only have 1 bit of padding after the
+  // sign if PaddingOnUnsignedFixedPoint is set.
+  unsigned char ShortAccumScale;
+  unsigned char AccumScale;
+  unsigned char LongAccumScale;
+
+  unsigned char SuitableAlign;
+  unsigned char DefaultAlignForAttributeAligned;
+  unsigned char MinGlobalAlign;
+
+  unsigned short NewAlign;
+  unsigned short MaxVectorAlign;
+  unsigned short MaxTLSAlign;
+
+  const llvm::fltSemantics *HalfFormat, *FloatFormat, *DoubleFormat,
+    *LongDoubleFormat, *Float128Format;
+
+  ///===---- Target Data Type Query Methods -------------------------------===//
+  enum IntType {
+    NoInt = 0,
+    SignedChar,
+    UnsignedChar,
+    SignedShort,
+    UnsignedShort,
+    SignedInt,
+    UnsignedInt,
+    SignedLong,
+    UnsignedLong,
+    SignedLongLong,
+    UnsignedLongLong
+  };
+
+  enum RealType {
+    NoFloat = 255,
+    Float = 0,
+    Double,
+    LongDouble,
+    Float128
+  };
+protected:
+  IntType SizeType, IntMaxType, PtrDiffType, IntPtrType, WCharType,
+          WIntType, Char16Type, Char32Type, Int64Type, SigAtomicType,
+          ProcessIDType;
+
+  /// Whether Objective-C's built-in boolean type should be signed char.
+  ///
+  /// Otherwise, when this flag is not set, the normal built-in boolean type is
+  /// used.
+  unsigned UseSignedCharForObjCBool : 1;
+
+  /// Control whether the alignment of bit-field types is respected when laying
+  /// out structures. If true, then the alignment of the bit-field type will be
+  /// used to (a) impact the alignment of the containing structure, and (b)
+  /// ensure that the individual bit-field will not straddle an alignment
+  /// boundary.
+  unsigned UseBitFieldTypeAlignment : 1;
+
+  /// Whether zero length bitfields (e.g., int : 0;) force alignment of
+  /// the next bitfield.
+  ///
+  /// If the alignment of the zero length bitfield is greater than the member
+  /// that follows it, `bar', `bar' will be aligned as the type of the
+  /// zero-length bitfield.
+  unsigned UseZeroLengthBitfieldAlignment : 1;
+
+  ///  Whether explicit bit field alignment attributes are honored.
+  unsigned UseExplicitBitFieldAlignment : 1;
+
+  /// If non-zero, specifies a fixed alignment value for bitfields that follow
+  /// zero length bitfield, regardless of the zero length bitfield type.
+  unsigned ZeroLengthBitfieldBoundary;
+};
+
 /// Exposes information about the current target.
 ///
-class TargetInfo : public RefCountedBase<TargetInfo> {
+class TargetInfo : public virtual TransferrableTargetInfo,
+                   public RefCountedBase<TargetInfo> {
   std::shared_ptr<TargetOptions> TargetOpts;
   llvm::Triple Triple;
 protected:
@@ -64,34 +172,12 @@ protected:
   bool HasLegalHalfType; // True if the backend supports operations on the half
                          // LLVM IR type.
   bool HasFloat128;
-  unsigned char PointerWidth, PointerAlign;
-  unsigned char BoolWidth, BoolAlign;
-  unsigned char IntWidth, IntAlign;
-  unsigned char HalfWidth, HalfAlign;
-  unsigned char FloatWidth, FloatAlign;
-  unsigned char DoubleWidth, DoubleAlign;
-  unsigned char LongDoubleWidth, LongDoubleAlign, Float128Align;
-  unsigned char LargeArrayMinWidth, LargeArrayAlign;
-  unsigned char LongWidth, LongAlign;
-  unsigned char LongLongWidth, LongLongAlign;
-  unsigned char ShortAccumWidth, ShortAccumAlign;
-  unsigned char AccumWidth, AccumAlign;
-  unsigned char LongAccumWidth, LongAccumAlign;
-  unsigned char ShortFractWidth, ShortFractAlign;
-  unsigned char FractWidth, FractAlign;
-  unsigned char LongFractWidth, LongFractAlign;
-  unsigned char SuitableAlign;
-  unsigned char DefaultAlignForAttributeAligned;
-  unsigned char MinGlobalAlign;
+  bool HasFloat16;
+
   unsigned char MaxAtomicPromoteWidth, MaxAtomicInlineWidth;
-  unsigned short MaxVectorAlign;
-  unsigned short MaxTLSAlign;
   unsigned short SimdDefaultAlign;
-  unsigned short NewAlign;
   std::unique_ptr<llvm::DataLayout> DataLayout;
   const char *MCountName;
-  const llvm::fltSemantics *HalfFormat, *FloatFormat, *DoubleFormat,
-    *LongDoubleFormat, *Float128Format;
   unsigned char RegParmMax, SSERegParmMax;
   TargetCXXABI TheCXXABI;
   const LangASMap *AddrSpaceMap;
@@ -131,29 +217,6 @@ public:
     assert(TargetOpts && "Missing target options");
     return *TargetOpts;
   }
-
-  ///===---- Target Data Type Query Methods -------------------------------===//
-  enum IntType {
-    NoInt = 0,
-    SignedChar,
-    UnsignedChar,
-    SignedShort,
-    UnsignedShort,
-    SignedInt,
-    UnsignedInt,
-    SignedLong,
-    UnsignedLong,
-    SignedLongLong,
-    UnsignedLongLong
-  };
-
-  enum RealType {
-    NoFloat = 255,
-    Float = 0,
-    Double,
-    LongDouble,
-    Float128
-  };
 
   /// The different kinds of __builtin_va_list types defined by
   /// the target implementation.
@@ -197,38 +260,6 @@ public:
   };
 
 protected:
-  IntType SizeType, IntMaxType, PtrDiffType, IntPtrType, WCharType,
-          WIntType, Char16Type, Char32Type, Int64Type, SigAtomicType,
-          ProcessIDType;
-
-  /// Whether Objective-C's built-in boolean type should be signed char.
-  ///
-  /// Otherwise, when this flag is not set, the normal built-in boolean type is
-  /// used.
-  unsigned UseSignedCharForObjCBool : 1;
-
-  /// Control whether the alignment of bit-field types is respected when laying
-  /// out structures. If true, then the alignment of the bit-field type will be
-  /// used to (a) impact the alignment of the containing structure, and (b)
-  /// ensure that the individual bit-field will not straddle an alignment
-  /// boundary.
-  unsigned UseBitFieldTypeAlignment : 1;
-
-  /// Whether zero length bitfields (e.g., int : 0;) force alignment of
-  /// the next bitfield.
-  ///
-  /// If the alignment of the zero length bitfield is greater than the member
-  /// that follows it, `bar', `bar' will be aligned as the type of the
-  /// zero-length bitfield.
-  unsigned UseZeroLengthBitfieldAlignment : 1;
-
-  ///  Whether explicit bit field alignment attributes are honored.
-  unsigned UseExplicitBitFieldAlignment : 1;
-
-  /// If non-zero, specifies a fixed alignment value for bitfields that follow
-  /// zero length bitfield, regardless of the zero length bitfield type.
-  unsigned ZeroLengthBitfieldBoundary;
-
   /// Specify if mangling based on address space map should be used or
   /// not for language specific address spaces
   bool UseAddrSpaceMapMangling;
@@ -289,6 +320,14 @@ public:
     default:
       llvm_unreachable("Unexpected signed integer type");
     }
+  }
+
+  /// In the event this target uses the same number of fractional bits for its
+  /// unsigned types as it does with its signed counterparts, there will be
+  /// exactly one bit of padding.
+  /// Return true if unsigned fixed point types have padding for this target.
+  bool doUnsignedFixedPointTypesHavePadding() const {
+    return PaddingOnUnsignedFixedPoint;
   }
 
   /// Return the width (in bits) of the specified integer type enum.
@@ -394,6 +433,89 @@ public:
   unsigned getLongFractWidth() const { return LongFractWidth; }
   unsigned getLongFractAlign() const { return LongFractAlign; }
 
+  /// getShortAccumScale/IBits - Return the number of fractional/integral bits
+  /// in a 'signed short _Accum' type.
+  unsigned getShortAccumScale() const { return ShortAccumScale; }
+  unsigned getShortAccumIBits() const {
+    return ShortAccumWidth - ShortAccumScale - 1;
+  }
+
+  /// getAccumScale/IBits - Return the number of fractional/integral bits
+  /// in a 'signed _Accum' type.
+  unsigned getAccumScale() const { return AccumScale; }
+  unsigned getAccumIBits() const { return AccumWidth - AccumScale - 1; }
+
+  /// getLongAccumScale/IBits - Return the number of fractional/integral bits
+  /// in a 'signed long _Accum' type.
+  unsigned getLongAccumScale() const { return LongAccumScale; }
+  unsigned getLongAccumIBits() const {
+    return LongAccumWidth - LongAccumScale - 1;
+  }
+
+  /// getUnsignedShortAccumScale/IBits - Return the number of
+  /// fractional/integral bits in a 'unsigned short _Accum' type.
+  unsigned getUnsignedShortAccumScale() const {
+    return PaddingOnUnsignedFixedPoint ? ShortAccumScale : ShortAccumScale + 1;
+  }
+  unsigned getUnsignedShortAccumIBits() const {
+    return PaddingOnUnsignedFixedPoint
+               ? getShortAccumIBits()
+               : ShortAccumWidth - getUnsignedShortAccumScale();
+  }
+
+  /// getUnsignedAccumScale/IBits - Return the number of fractional/integral
+  /// bits in a 'unsigned _Accum' type.
+  unsigned getUnsignedAccumScale() const {
+    return PaddingOnUnsignedFixedPoint ? AccumScale : AccumScale + 1;
+  }
+  unsigned getUnsignedAccumIBits() const {
+    return PaddingOnUnsignedFixedPoint ? getAccumIBits()
+                                       : AccumWidth - getUnsignedAccumScale();
+  }
+
+  /// getUnsignedLongAccumScale/IBits - Return the number of fractional/integral
+  /// bits in a 'unsigned long _Accum' type.
+  unsigned getUnsignedLongAccumScale() const {
+    return PaddingOnUnsignedFixedPoint ? LongAccumScale : LongAccumScale + 1;
+  }
+  unsigned getUnsignedLongAccumIBits() const {
+    return PaddingOnUnsignedFixedPoint
+               ? getLongAccumIBits()
+               : LongAccumWidth - getUnsignedLongAccumScale();
+  }
+
+  /// getShortFractScale - Return the number of fractional bits
+  /// in a 'signed short _Fract' type.
+  unsigned getShortFractScale() const { return ShortFractWidth - 1; }
+
+  /// getFractScale - Return the number of fractional bits
+  /// in a 'signed _Fract' type.
+  unsigned getFractScale() const { return FractWidth - 1; }
+
+  /// getLongFractScale - Return the number of fractional bits
+  /// in a 'signed long _Fract' type.
+  unsigned getLongFractScale() const { return LongFractWidth - 1; }
+
+  /// getUnsignedShortFractScale - Return the number of fractional bits
+  /// in a 'unsigned short _Fract' type.
+  unsigned getUnsignedShortFractScale() const {
+    return PaddingOnUnsignedFixedPoint ? getShortFractScale()
+                                       : getShortFractScale() + 1;
+  }
+
+  /// getUnsignedFractScale - Return the number of fractional bits
+  /// in a 'unsigned _Fract' type.
+  unsigned getUnsignedFractScale() const {
+    return PaddingOnUnsignedFixedPoint ? getFractScale() : getFractScale() + 1;
+  }
+
+  /// getUnsignedLongFractScale - Return the number of fractional bits
+  /// in a 'unsigned long _Fract' type.
+  unsigned getUnsignedLongFractScale() const {
+    return PaddingOnUnsignedFixedPoint ? getLongFractScale()
+                                       : getLongFractScale() + 1;
+  }
+
   /// Determine whether the __int128 type is supported on this target.
   virtual bool hasInt128Type() const {
     return (getPointerWidth(0) >= 64) || getTargetOpts().ForceEnableInt128;
@@ -404,6 +526,9 @@ public:
 
   /// Determine whether the __float128 type is supported on this target.
   virtual bool hasFloat128Type() const { return HasFloat128; }
+
+  /// Determine whether the _Float16 type is supported on this target.
+  virtual bool hasFloat16Type() const { return HasFloat16; }
 
   /// Return the alignment that is suitable for storing any
   /// object with a fundamental alignment requirement.
@@ -417,7 +542,9 @@ public:
 
   /// getMinGlobalAlign - Return the minimum alignment of a global variable,
   /// unless its alignment is explicitly reduced via attributes.
-  unsigned getMinGlobalAlign() const { return MinGlobalAlign; }
+  virtual unsigned getMinGlobalAlign (uint64_t) const {
+    return MinGlobalAlign;
+  }
 
   /// Return the largest alignment for which a suitably-sized allocation with
   /// '::operator new(size_t)' is guaranteed to produce a correctly-aligned
@@ -472,9 +599,11 @@ public:
     return *Float128Format;
   }
 
-  /// Return true if the 'long double' type should be mangled like
-  /// __float128.
-  virtual bool useFloat128ManglingForLongDouble() const { return false; }
+  /// Return the mangled code of long double.
+  virtual const char *getLongDoubleMangling() const { return "e"; }
+
+  /// Return the mangled code of __float128.
+  virtual const char *getFloat128Mangling() const { return "g"; }
 
   /// Return the value for the C99 FLT_EVAL_METHOD macro.
   virtual unsigned getFloatEvalMethod() const { return 0; }
@@ -509,6 +638,21 @@ public:
   /// value is type-specific, but this alignment can be used for most of the
   /// types for the given target.
   unsigned getSimdDefaultAlign() const { return SimdDefaultAlign; }
+
+  /// Return the alignment (in bits) of the thrown exception object. This is
+  /// only meaningful for targets that allocate C++ exceptions in a system
+  /// runtime, such as those using the Itanium C++ ABI.
+  virtual unsigned getExnObjectAlignment() const {
+    // Itanium says that an _Unwind_Exception has to be "double-word"
+    // aligned (and thus the end of it is also so-aligned), meaning 16
+    // bytes.  Of course, that was written for the actual Itanium,
+    // which is a 64-bit platform.  Classically, the ABI doesn't really
+    // specify the alignment on other platforms, but in practice
+    // libUnwind declares the struct with __attribute__((aligned)), so
+    // we assume that alignment here.  (It's generally 16 bytes, but
+    // some targets overwrite it.)
+    return getDefaultAlignForAttributeAligned();
+  }
 
   /// Return the size of intmax_t and uintmax_t for this target, in bits.
   unsigned getIntMaxTWidth() const {
@@ -691,6 +835,7 @@ public:
     struct {
       int Min;
       int Max;
+      bool isConstrained;
     } ImmRange;
     llvm::SmallSet<int, 4> ImmSet;
 
@@ -701,6 +846,7 @@ public:
         : Flags(0), TiedOperand(-1), ConstraintStr(ConstraintStr.str()),
           Name(Name.str()) {
       ImmRange.Min = ImmRange.Max = 0;
+      ImmRange.isConstrained = false;
     }
 
     const std::string &getConstraintStr() const { return ConstraintStr; }
@@ -729,8 +875,11 @@ public:
       return (Flags & CI_ImmediateConstant) != 0;
     }
     bool isValidAsmImmediate(const llvm::APInt &Value) const {
-      return (Value.sge(ImmRange.Min) && Value.sle(ImmRange.Max)) ||
-             ImmSet.count(Value.getZExtValue()) != 0;
+      if (!ImmSet.empty())
+        return Value.isSignedIntN(32) &&
+               ImmSet.count(Value.getZExtValue()) != 0;
+      return !ImmRange.isConstrained ||
+             (Value.sge(ImmRange.Min) && Value.sle(ImmRange.Max));
     }
 
     void setIsReadWrite() { Flags |= CI_ReadWrite; }
@@ -742,6 +891,7 @@ public:
       Flags |= CI_ImmediateConstant;
       ImmRange.Min = Min;
       ImmRange.Max = Max;
+      ImmRange.isConstrained = true;
     }
     void setRequiresImmediate(llvm::ArrayRef<int> Exacts) {
       Flags |= CI_ImmediateConstant;
@@ -754,8 +904,6 @@ public:
     }
     void setRequiresImmediate() {
       Flags |= CI_ImmediateConstant;
-      ImmRange.Min = INT_MIN;
-      ImmRange.Max = INT_MAX;
     }
 
     /// Indicate that this is an input operand that is tied to
@@ -970,9 +1118,15 @@ public:
     return false;
   }
 
-  /// Identify whether this taret supports multiversioning of functions,
+  /// Identify whether this target supports multiversioning of functions,
   /// which requires support for cpu_supports and cpu_is functionality.
-  virtual bool supportsMultiVersioning() const { return false; }
+  bool supportsMultiVersioning() const {
+    return getTriple().getArch() == llvm::Triple::x86 ||
+           getTriple().getArch() == llvm::Triple::x86_64;
+  }
+
+  /// Identify whether this target supports IFuncs.
+  bool supportsIFunc() const { return getTriple().isOSBinFormatELF(); }
 
   // Validate the contents of the __builtin_cpu_supports(const char*)
   // argument.
@@ -987,6 +1141,27 @@ public:
   // Validate the contents of the __builtin_cpu_is(const char*)
   // argument.
   virtual bool validateCpuIs(StringRef Name) const { return false; }
+
+  // Validate a cpu_dispatch/cpu_specific CPU option, which is a different list
+  // from cpu_is, since it checks via features rather than CPUs directly.
+  virtual bool validateCPUSpecificCPUDispatch(StringRef Name) const {
+    return false;
+  }
+
+  // Get the character to be added for mangling purposes for cpu_specific.
+  virtual char CPUSpecificManglingCharacter(StringRef Name) const {
+    llvm_unreachable(
+        "cpu_specific Multiversioning not implemented on this target");
+  }
+
+  // Get a list of the features that make up the CPU option for
+  // cpu_specific/cpu_dispatch so that it can be passed to llvm as optimization
+  // options.
+  virtual void getCPUSpecificCPUDispatchFeatures(
+      StringRef Name, llvm::SmallVectorImpl<StringRef> &Features) const {
+    llvm_unreachable(
+        "cpu_specific Multiversioning not implemented on this target");
+  }
 
   // Returns maximal number of args passed in registers.
   unsigned getRegParmMax() const {
@@ -1014,7 +1189,8 @@ public:
   bool isSEHTrySupported() const {
     return getTriple().isOSWindows() &&
            (getTriple().getArch() == llvm::Triple::x86 ||
-            getTriple().getArch() == llvm::Triple::x86_64);
+            getTriple().getArch() == llvm::Triple::x86_64 ||
+            getTriple().getArch() == llvm::Triple::aarch64);
   }
 
   /// Return true if {|} are normal characters in the asm string.
@@ -1042,6 +1218,18 @@ public:
 
   const LangASMap &getAddressSpaceMap() const { return *AddrSpaceMap; }
 
+  /// Map from the address space field in builtin description strings to the
+  /// language address space.
+  virtual LangAS getOpenCLBuiltinAddressSpace(unsigned AS) const {
+    return getLangASFromTargetAS(AS);
+  }
+
+  /// Map from the address space field in builtin description strings to the
+  /// language address space.
+  virtual LangAS getCUDABuiltinAddressSpace(unsigned AS) const {
+    return getLangASFromTargetAS(AS);
+  }
+
   /// Return an AST address space which can be used opportunistically
   /// for constant global memory. It must be possible to convert pointers into
   /// this address space to LangAS::Default. If no such address space exists,
@@ -1061,15 +1249,9 @@ public:
   bool isBigEndian() const { return BigEndian; }
   bool isLittleEndian() const { return !BigEndian; }
 
-  enum CallingConvMethodType {
-    CCMT_Unknown,
-    CCMT_Member,
-    CCMT_NonMember
-  };
-
   /// Gets the default calling convention for the given target and
   /// declaration context.
-  virtual CallingConv getDefaultCallingConv(CallingConvMethodType MT) const {
+  virtual CallingConv getDefaultCallingConv() const {
     // Not all targets will specify an explicit calling convention that we can
     // express.  This will always do the right thing, even though it's not
     // an explicit calling convention.
@@ -1098,7 +1280,7 @@ public:
   enum CallingConvKind {
     CCK_Default,
     CCK_ClangABI4OrPS4,
-    CCK_MicrosoftX86_64
+    CCK_MicrosoftWin64
   };
 
   virtual CallingConvKind getCallingConvKind(bool ClangABICompat4) const;
@@ -1169,12 +1351,22 @@ public:
     return None;
   }
 
+  /// \returns The version of the SDK which was used during the compilation if
+  /// one was specified, or an empty version otherwise.
+  const llvm::VersionTuple &getSDKVersion() const {
+    return getTargetOpts().SDKVersion;
+  }
+
   /// Check the target is valid after it is fully initialized.
   virtual bool validateTarget(DiagnosticsEngine &Diags) const {
     return true;
   }
 
+  virtual void setAuxTarget(const TargetInfo *Aux) {}
+
 protected:
+  /// Copy type and layout related info.
+  void copyAuxTarget(const TargetInfo *Aux);
   virtual uint64_t getPointerWidthV(unsigned AddrSpace) const {
     return PointerWidth;
   }
@@ -1189,6 +1381,11 @@ protected:
   virtual ArrayRef<AddlRegName> getGCCAddlRegNames() const {
     return None;
   }
+
+ private:
+  // Assert the values for the fractional and integral bits for each fixed point
+  // type follow the restrictions given in clause 6.2.6.3 of N1169.
+  void CheckFixedPointBits() const;
 };
 
 }  // end namespace clang

@@ -1,9 +1,8 @@
 //===- CFG.h - Classes for representing and building CFGs -------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -15,9 +14,10 @@
 #ifndef LLVM_CLANG_ANALYSIS_CFG_H
 #define LLVM_CLANG_ANALYSIS_CFG_H
 
-#include "clang/AST/ExprCXX.h"
 #include "clang/Analysis/Support/BumpVector.h"
 #include "clang/Analysis/ConstructionContext.h"
+#include "clang/AST/ExprCXX.h"
+#include "clang/AST/ExprObjC.h"
 #include "clang/Basic/LLVM.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/GraphTraits.h"
@@ -51,7 +51,7 @@ class FieldDecl;
 class LangOptions;
 class VarDecl;
 
-/// CFGElement - Represents a top-level expression in a basic block.
+/// Represents a top-level expression in a basic block.
 class CFGElement {
 public:
   enum Kind {
@@ -144,9 +144,9 @@ protected:
   CFGStmt() = default;
 };
 
-/// CFGConstructor - Represents C++ constructor call. Maintains information
-/// necessary to figure out what memory is being initialized by the
-/// constructor expression. For now this is only used by the analyzer's CFG.
+/// Represents C++ constructor call. Maintains information necessary to figure
+/// out what memory is being initialized by the constructor expression. For now
+/// this is only used by the analyzer's CFG.
 class CFGConstructor : public CFGStmt {
 public:
   explicit CFGConstructor(CXXConstructExpr *CE, const ConstructionContext *C)
@@ -169,30 +169,34 @@ private:
   }
 };
 
-/// CFGCXXRecordTypedCall - Represents a function call that returns a C++ object
-/// by value. This, like constructor, requires a construction context in order
-/// to understand the storage of the returned object . In C such tracking is not
-/// necessary because no additional effort is required for destroying the object
-/// or modeling copy elision. Like CFGConstructor, this element is for now only
-/// used by the analyzer's CFG.
+/// Represents a function call that returns a C++ object by value. This, like
+/// constructor, requires a construction context in order to understand the
+/// storage of the returned object . In C such tracking is not necessary because
+/// no additional effort is required for destroying the object or modeling copy
+/// elision. Like CFGConstructor, this element is for now only used by the
+/// analyzer's CFG.
 class CFGCXXRecordTypedCall : public CFGStmt {
 public:
   /// Returns true when call expression \p CE needs to be represented
   /// by CFGCXXRecordTypedCall, as opposed to a regular CFGStmt.
-  static bool isCXXRecordTypedCall(CallExpr *CE, const ASTContext &ACtx) {
-    return CE->getCallReturnType(ACtx).getCanonicalType()->getAsCXXRecordDecl();
+  static bool isCXXRecordTypedCall(Expr *E) {
+    assert(isa<CallExpr>(E) || isa<ObjCMessageExpr>(E));
+    // There is no such thing as reference-type expression. If the function
+    // returns a reference, it'll return the respective lvalue or xvalue
+    // instead, and we're only interested in objects.
+    return !E->isGLValue() &&
+           E->getType().getCanonicalType()->getAsCXXRecordDecl();
   }
 
-  explicit CFGCXXRecordTypedCall(CallExpr *CE, const ConstructionContext *C)
-      : CFGStmt(CE, CXXRecordTypedCall) {
-    // FIXME: This is not protected against squeezing a non-record-typed-call
-    // into the constructor. An assertion would require passing an ASTContext
-    // which would mean paying for something we don't use.
+  explicit CFGCXXRecordTypedCall(Expr *E, const ConstructionContext *C)
+      : CFGStmt(E, CXXRecordTypedCall) {
+    assert(isCXXRecordTypedCall(E));
     assert(C && (isa<TemporaryObjectConstructionContext>(C) ||
                  // These are possible in C++17 due to mandatory copy elision.
                  isa<ReturnedValueConstructionContext>(C) ||
                  isa<VariableConstructionContext>(C) ||
-                 isa<ConstructorInitializerConstructionContext>(C)));
+                 isa<ConstructorInitializerConstructionContext>(C) ||
+                 isa<ArgumentConstructionContext>(C)));
     Data2.setPointer(const_cast<ConstructionContext *>(C));
   }
 
@@ -210,8 +214,8 @@ private:
   }
 };
 
-/// CFGInitializer - Represents C++ base or member initializer from
-/// constructor's initialization list.
+/// Represents C++ base or member initializer from constructor's initialization
+/// list.
 class CFGInitializer : public CFGElement {
 public:
   explicit CFGInitializer(CXXCtorInitializer *initializer)
@@ -231,7 +235,7 @@ private:
   }
 };
 
-/// CFGNewAllocator - Represents C++ allocator call.
+/// Represents C++ allocator call.
 class CFGNewAllocator : public CFGElement {
 public:
   explicit CFGNewAllocator(const CXXNewExpr *S)
@@ -349,8 +353,8 @@ private:
   }
 };
 
-/// CFGImplicitDtor - Represents C++ object destructor implicitly generated
-/// by compiler on various occasions.
+/// Represents C++ object destructor implicitly generated by compiler on various
+/// occasions.
 class CFGImplicitDtor : public CFGElement {
 protected:
   CFGImplicitDtor() = default;
@@ -373,9 +377,9 @@ private:
   }
 };
 
-/// CFGAutomaticObjDtor - Represents C++ object destructor implicitly generated
-/// for automatic object or temporary bound to const reference at the point
-/// of leaving its local scope.
+/// Represents C++ object destructor implicitly generated for automatic object
+/// or temporary bound to const reference at the point of leaving its local
+/// scope.
 class CFGAutomaticObjDtor: public CFGImplicitDtor {
 public:
   CFGAutomaticObjDtor(const VarDecl *var, const Stmt *stmt)
@@ -400,8 +404,7 @@ private:
   }
 };
 
-/// CFGDeleteDtor - Represents C++ object destructor generated
-/// from a call to delete.
+/// Represents C++ object destructor generated from a call to delete.
 class CFGDeleteDtor : public CFGImplicitDtor {
 public:
   CFGDeleteDtor(const CXXRecordDecl *RD, const CXXDeleteExpr *DE)
@@ -426,8 +429,8 @@ private:
   }
 };
 
-/// CFGBaseDtor - Represents C++ object destructor implicitly generated for
-/// base object in destructor.
+/// Represents C++ object destructor implicitly generated for base object in
+/// destructor.
 class CFGBaseDtor : public CFGImplicitDtor {
 public:
   CFGBaseDtor(const CXXBaseSpecifier *base)
@@ -447,8 +450,8 @@ private:
   }
 };
 
-/// CFGMemberDtor - Represents C++ object destructor implicitly generated for
-/// member object in destructor.
+/// Represents C++ object destructor implicitly generated for member object in
+/// destructor.
 class CFGMemberDtor : public CFGImplicitDtor {
 public:
   CFGMemberDtor(const FieldDecl *field)
@@ -468,8 +471,8 @@ private:
   }
 };
 
-/// CFGTemporaryDtor - Represents C++ object destructor implicitly generated
-/// at the end of full expression for temporary object.
+/// Represents C++ object destructor implicitly generated at the end of full
+/// expression for temporary object.
 class CFGTemporaryDtor : public CFGImplicitDtor {
 public:
   CFGTemporaryDtor(CXXBindTemporaryExpr *expr)
@@ -489,38 +492,56 @@ private:
   }
 };
 
-/// CFGTerminator - Represents CFGBlock terminator statement.
+/// Represents CFGBlock terminator statement.
 ///
-/// TemporaryDtorsBranch bit is set to true if the terminator marks a branch
-/// in control flow of destructors of temporaries. In this case terminator
-/// statement is the same statement that branches control flow in evaluation
-/// of matching full expression.
 class CFGTerminator {
-  llvm::PointerIntPair<Stmt *, 1> Data;
+public:
+  enum Kind {
+    /// A branch that corresponds to a statement in the code,
+    /// such as an if-statement.
+    StmtBranch,
+    /// A branch in control flow of destructors of temporaries. In this case
+    /// terminator statement is the same statement that branches control flow
+    /// in evaluation of matching full expression.
+    TemporaryDtorsBranch,
+    /// A shortcut around virtual base initializers. It gets taken when
+    /// virtual base classes have already been initialized by the constructor
+    /// of the most derived class while we're in the base class.
+    VirtualBaseBranch,
+
+    /// Number of different kinds, for sanity checks. We subtract 1 so that
+    /// to keep receiving compiler warnings when we don't cover all enum values
+    /// in a switch.
+    NumKindsMinusOne = VirtualBaseBranch
+  };
+
+private:
+  static constexpr int KindBits = 2;
+  static_assert((1 << KindBits) > NumKindsMinusOne,
+                "Not enough room for kind!");
+  llvm::PointerIntPair<Stmt *, KindBits> Data;
 
 public:
-  CFGTerminator() = default;
-  CFGTerminator(Stmt *S, bool TemporaryDtorsBranch = false)
-      : Data(S, TemporaryDtorsBranch) {}
+  CFGTerminator() { assert(!isValid()); }
+  CFGTerminator(Stmt *S, Kind K = StmtBranch) : Data(S, K) {}
 
+  bool isValid() const { return Data.getOpaqueValue() != nullptr; }
   Stmt *getStmt() { return Data.getPointer(); }
   const Stmt *getStmt() const { return Data.getPointer(); }
+  Kind getKind() const { return static_cast<Kind>(Data.getInt()); }
 
-  bool isTemporaryDtorsBranch() const { return Data.getInt(); }
-
-  operator Stmt *() { return getStmt(); }
-  operator const Stmt *() const { return getStmt(); }
-
-  Stmt *operator->() { return getStmt(); }
-  const Stmt *operator->() const { return getStmt(); }
-
-  Stmt &operator*() { return *getStmt(); }
-  const Stmt &operator*() const { return *getStmt(); }
-
-  explicit operator bool() const { return getStmt(); }
+  bool isStmtBranch() const {
+    return getKind() == StmtBranch;
+  }
+  bool isTemporaryDtorsBranch() const {
+    return getKind() == TemporaryDtorsBranch;
+  }
+  bool isVirtualBaseBranch() const {
+    return getKind() == VirtualBaseBranch;
+  }
 };
 
-/// CFGBlock - Represents a single basic block in a source-level CFG.
+/// Represents a single basic block in a source-level CFG.
 ///  It consists of:
 ///
 ///  (1) A set of statements/expressions (which may contain subexpressions).
@@ -538,11 +559,12 @@ public:
 /// Successors: the order in the set of successors is NOT arbitrary.  We
 ///  currently have the following orderings based on the terminator:
 ///
-///     Terminator       Successor Ordering
-///  -----------------------------------------------------
-///       if            Then Block;  Else Block
-///     ? operator      LHS expression;  RHS expression
-///     &&, ||          expression that uses result of && or ||, RHS
+///     Terminator     |   Successor Ordering
+///  ------------------|------------------------------------
+///       if           |  Then Block;  Else Block
+///     ? operator     |  LHS expression;  RHS expression
+///     logical and/or |  expression that consumes the op, RHS
+///     vbase inits    |  already handled by the most derived class; not yet
 ///
 /// But note that any of that may be NULL in case of optimized-out edges.
 class CFGBlock {
@@ -588,26 +610,24 @@ class CFGBlock {
     bool empty() const { return Impl.empty(); }
   };
 
-  /// Stmts - The set of statements in the basic block.
+  /// The set of statements in the basic block.
   ElementList Elements;
 
-  /// Label - An (optional) label that prefixes the executable
-  ///  statements in the block.  When this variable is non-NULL, it is
-  ///  either an instance of LabelStmt, SwitchCase or CXXCatchStmt.
+  /// An (optional) label that prefixes the executable statements in the block.
+  /// When this variable is non-NULL, it is either an instance of LabelStmt,
+  /// SwitchCase or CXXCatchStmt.
   Stmt *Label = nullptr;
 
-  /// Terminator - The terminator for a basic block that
-  ///  indicates the type of control-flow that occurs between a block
-  ///  and its successors.
+  /// The terminator for a basic block that indicates the type of control-flow
+  /// that occurs between a block and its successors.
   CFGTerminator Terminator;
 
-  /// LoopTarget - Some blocks are used to represent the "loop edge" to
-  ///  the start of a loop from within the loop body.  This Stmt* will be
-  ///  refer to the loop statement for such blocks (and be null otherwise).
+  /// Some blocks are used to represent the "loop edge" to the start of a loop
+  /// from within the loop body. This Stmt* will be refer to the loop statement
+  /// for such blocks (and be null otherwise).
   const Stmt *LoopTarget = nullptr;
 
-  /// BlockID - A numerical ID assigned to a CFGBlock during construction
-  ///   of the CFG.
+  /// A numerical ID assigned to a CFGBlock during construction of the CFG.
   unsigned BlockID;
 
 public:
@@ -629,7 +649,7 @@ public:
   public:
     /// Construct an AdjacentBlock with a possibly unreachable block.
     AdjacentBlock(CFGBlock *B, bool IsReachable);
-    
+
     /// Construct an AdjacentBlock with a reachable block and an alternate
     /// unreachable block.
     AdjacentBlock(CFGBlock *B, CFGBlock *AlternateBlock);
@@ -665,13 +685,12 @@ public:
   };
 
 private:
-  /// Predecessors/Successors - Keep track of the predecessor / successor
-  /// CFG blocks.
+  /// Keep track of the predecessor / successor CFG blocks.
   using AdjacentBlocks = BumpVector<AdjacentBlock>;
   AdjacentBlocks Preds;
   AdjacentBlocks Succs;
 
-  /// NoReturn - This bit is set when the basic block contains a function call
+  /// This bit is set when the basic block contains a function call
   /// or implicit destructor that is attributed as 'noreturn'. In that case,
   /// control cannot technically ever proceed past this block. All such blocks
   /// will have a single immediate successor: the exit block. This allows them
@@ -682,7 +701,7 @@ private:
   /// storage if the memory usage of CFGBlock becomes an issue.
   unsigned HasNoReturnElement : 1;
 
-  /// Parent - The parent CFG that owns this CFGBlock.
+  /// The parent CFG that owns this CFGBlock.
   CFG *Parent;
 
 public:
@@ -836,8 +855,18 @@ public:
   void setLoopTarget(const Stmt *loopTarget) { LoopTarget = loopTarget; }
   void setHasNoReturnElement() { HasNoReturnElement = true; }
 
-  CFGTerminator getTerminator() { return Terminator; }
-  const CFGTerminator getTerminator() const { return Terminator; }
+  CFGTerminator getTerminator() const { return Terminator; }
+
+  Stmt *getTerminatorStmt() { return Terminator.getStmt(); }
+  const Stmt *getTerminatorStmt() const { return Terminator.getStmt(); }
+
+  /// \returns the last (\c rbegin()) condition, e.g. observe the following code
+  /// snippet:
+  ///   if (A && B && C)
+  /// A block would be created for \c A, \c B, and \c C. For the latter,
+  /// \c getTerminatorStmt() would retrieve the entire condition, rather than
+  /// C itself, while this method would only return C.
+  const Expr *getLastCondition() const;
 
   Stmt *getTerminatorCondition(bool StripParens = true);
 
@@ -861,7 +890,11 @@ public:
   void dump(const CFG *cfg, const LangOptions &LO, bool ShowColors = false) const;
   void print(raw_ostream &OS, const CFG* cfg, const LangOptions &LO,
              bool ShowColors) const;
+
   void printTerminator(raw_ostream &OS, const LangOptions &LO) const;
+  void printTerminatorJson(raw_ostream &Out, const LangOptions &LO,
+                           bool AddQuotes) const;
+  
   void printAsOperand(raw_ostream &OS, bool /*PrintType*/) {
     OS << "BB#" << getBlockID();
   }
@@ -878,10 +911,10 @@ public:
     Elements.push_back(CFGConstructor(CE, CC), C);
   }
 
-  void appendCXXRecordTypedCall(CallExpr *CE,
+  void appendCXXRecordTypedCall(Expr *E,
                                 const ConstructionContext *CC,
                                 BumpVectorContext &C) {
-    Elements.push_back(CFGCXXRecordTypedCall(CE, CC), C);
+    Elements.push_back(CFGCXXRecordTypedCall(E, CC), C);
   }
 
   void appendInitializer(CXXCtorInitializer *initializer,
@@ -992,7 +1025,7 @@ public:
                                       bool isAlwaysTrue) {}
 };
 
-/// CFG - Represents a source-level, intra-procedural CFG that represents the
+/// Represents a source-level, intra-procedural CFG that represents the
 ///  control-flow of a Stmt.  The Stmt can represent an entire function body,
 ///  or a single expression.  A CFG will always contain one empty block that
 ///  represents the Exit point of the CFG.  A CFG will also contain a designated
@@ -1025,6 +1058,8 @@ public:
     bool AddCXXNewAllocator = false;
     bool AddCXXDefaultInitExprInCtors = false;
     bool AddRichCXXConstructors = false;
+    bool MarkElidedCXXConstructors = false;
+    bool AddVirtualBaseBranches = false;
 
     BuildOptions() = default;
 
@@ -1043,21 +1078,21 @@ public:
     }
   };
 
-  /// buildCFG - Builds a CFG from an AST.
+  /// Builds a CFG from an AST.
   static std::unique_ptr<CFG> buildCFG(const Decl *D, Stmt *AST, ASTContext *C,
                                        const BuildOptions &BO);
 
-  /// createBlock - Create a new block in the CFG.  The CFG owns the block;
-  ///  the caller should not directly free it.
+  /// Create a new block in the CFG. The CFG owns the block; the caller should
+  /// not directly free it.
   CFGBlock *createBlock();
 
-  /// setEntry - Set the entry block of the CFG.  This is typically used
-  ///  only during CFG construction.  Most CFG clients expect that the
-  ///  entry block has no predecessors and contains no statements.
+  /// Set the entry block of the CFG. This is typically used only during CFG
+  /// construction. Most CFG clients expect that the entry block has no
+  /// predecessors and contains no statements.
   void setEntry(CFGBlock *B) { Entry = B; }
 
-  /// setIndirectGotoBlock - Set the block used for indirect goto jumps.
-  ///  This is typically used only during CFG construction.
+  /// Set the block used for indirect goto jumps. This is typically used only
+  /// during CFG construction.
   void setIndirectGotoBlock(CFGBlock *B) { IndirectGotoBlock = B; }
 
   //===--------------------------------------------------------------------===//
@@ -1151,8 +1186,8 @@ public:
 
   template <typename CALLBACK>
   void VisitBlockStmts(CALLBACK& O) const {
-    for (const_iterator I=begin(), E=end(); I != E; ++I)
-      for (CFGBlock::const_iterator BI=(*I)->begin(), BE=(*I)->end();
+    for (const_iterator I = begin(), E = end(); I != E; ++I)
+      for (CFGBlock::const_iterator BI = (*I)->begin(), BE = (*I)->end();
            BI != BE; ++BI) {
         if (Optional<CFGStmt> stmt = BI->getAs<CFGStmt>())
           O(const_cast<Stmt*>(stmt->getStmt()));
@@ -1163,14 +1198,19 @@ public:
   // CFG Introspection.
   //===--------------------------------------------------------------------===//
 
-  /// getNumBlockIDs - Returns the total number of BlockIDs allocated (which
-  /// start at 0).
+  /// Returns the total number of BlockIDs allocated (which start at 0).
   unsigned getNumBlockIDs() const { return NumBlockIDs; }
 
-  /// size - Return the total number of CFGBlocks within the CFG
-  /// This is simply a renaming of the getNumBlockIDs(). This is necessary 
-  /// because the dominator implementation needs such an interface.
+  /// Return the total number of CFGBlocks within the CFG This is simply a
+  /// renaming of the getNumBlockIDs(). This is necessary because the dominator
+  /// implementation needs such an interface.
   unsigned size() const { return NumBlockIDs; }
+
+  /// Returns true if the CFG has no branches. Usually it boils down to the CFG
+  /// having exactly three blocks (entry, the actual code, exit), but sometimes
+  /// more blocks appear due to having control flow that can be fully
+  /// resolved in compile time.
+  bool isLinear() const;
 
   //===--------------------------------------------------------------------===//
   // CFG Debugging: Pretty-Printing and Visualization.
@@ -1245,6 +1285,9 @@ template <> struct GraphTraits< ::clang::CFGBlock *> {
   static ChildIteratorType child_end(NodeRef N) { return N->succ_end(); }
 };
 
+template <> struct GraphTraits<clang::CFGBlock>
+    : GraphTraits<clang::CFGBlock *> {};
+
 template <> struct GraphTraits< const ::clang::CFGBlock *> {
   using NodeRef = const ::clang::CFGBlock *;
   using ChildIteratorType = ::clang::CFGBlock::const_succ_iterator;
@@ -1253,6 +1296,9 @@ template <> struct GraphTraits< const ::clang::CFGBlock *> {
   static ChildIteratorType child_begin(NodeRef N) { return N->succ_begin(); }
   static ChildIteratorType child_end(NodeRef N) { return N->succ_end(); }
 };
+
+template <> struct GraphTraits<const clang::CFGBlock>
+    : GraphTraits<clang::CFGBlock *> {};
 
 template <> struct GraphTraits<Inverse< ::clang::CFGBlock *>> {
   using NodeRef = ::clang::CFGBlock *;
@@ -1266,6 +1312,9 @@ template <> struct GraphTraits<Inverse< ::clang::CFGBlock *>> {
   static ChildIteratorType child_end(NodeRef N) { return N->pred_end(); }
 };
 
+template <> struct GraphTraits<Inverse<clang::CFGBlock>>
+    : GraphTraits<clang::CFGBlock *> {};
+
 template <> struct GraphTraits<Inverse<const ::clang::CFGBlock *>> {
   using NodeRef = const ::clang::CFGBlock *;
   using ChildIteratorType = ::clang::CFGBlock::const_pred_iterator;
@@ -1277,6 +1326,9 @@ template <> struct GraphTraits<Inverse<const ::clang::CFGBlock *>> {
   static ChildIteratorType child_begin(NodeRef N) { return N->pred_begin(); }
   static ChildIteratorType child_end(NodeRef N) { return N->pred_end(); }
 };
+
+template <> struct GraphTraits<const Inverse<clang::CFGBlock>>
+    : GraphTraits<clang::CFGBlock *> {};
 
 // Traits for: CFG
 

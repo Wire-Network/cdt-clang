@@ -1,9 +1,8 @@
 //===- DeclCXX.h - Classes for representing C++ declarations --*- C++ -*-=====//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -65,6 +64,7 @@ class CXXDestructorDecl;
 class CXXFinalOverriderMap;
 class CXXIndirectPrimaryBaseSet;
 class CXXMethodDecl;
+class DecompositionDecl;
 class DiagnosticBuilder;
 class FriendDecl;
 class FunctionTemplateDecl;
@@ -234,12 +234,12 @@ public:
 
   /// Retrieves the source range that contains the entire base specifier.
   SourceRange getSourceRange() const LLVM_READONLY { return Range; }
-  SourceLocation getLocStart() const LLVM_READONLY { return Range.getBegin(); }
-  SourceLocation getLocEnd() const LLVM_READONLY { return Range.getEnd(); }
+  SourceLocation getBeginLoc() const LLVM_READONLY { return Range.getBegin(); }
+  SourceLocation getEndLoc() const LLVM_READONLY { return Range.getEnd(); }
 
   /// Get the location at which the base class type was written.
   SourceLocation getBaseTypeLoc() const LLVM_READONLY {
-    return BaseTypeInfo->getTypeLoc().getLocStart();
+    return BaseTypeInfo->getTypeLoc().getBeginLoc();
   }
 
   /// Determines whether the base class is a virtual base class (or not).
@@ -265,7 +265,7 @@ public:
     return EllipsisLoc;
   }
 
-  /// Returns the access specifier for this base specifier. 
+  /// Returns the access specifier for this base specifier.
   ///
   /// This is the actual base specifier as used for semantic analysis, so
   /// the result can never be AS_none. To retrieve the access specifier as
@@ -335,10 +335,12 @@ class CXXRecordDecl : public RecordDecl {
     /// True when this class is a POD-type.
     unsigned PlainOldData : 1;
 
-    /// true when this class is empty for traits purposes,
-    /// i.e. has no data members other than 0-width bit-fields, has no
-    /// virtual function/base, and doesn't inherit from a non-empty
-    /// class. Doesn't take union-ness into account.
+    /// True when this class is empty for traits purposes, that is:
+    ///  * has no data members other than 0-width bit-fields and empty fields
+    ///    marked [[no_unique_address]]
+    ///  * has no virtual function/base, and
+    ///  * doesn't inherit from a non-empty class.
+    /// Doesn't take union-ness into account.
     unsigned Empty : 1;
 
     /// True when this class is polymorphic, i.e., has at
@@ -565,7 +567,7 @@ class CXXRecordDecl : public RecordDecl {
     CXXRecordDecl *Definition;
 
     /// The first friend declaration in this class, or null if there
-    /// aren't any. 
+    /// aren't any.
     ///
     /// This is actually currently stored in reverse order.
     LazyDeclPtr FirstFriend;
@@ -607,14 +609,14 @@ class CXXRecordDecl : public RecordDecl {
 
     /// Whether this lambda is known to be dependent, even if its
     /// context isn't dependent.
-    /// 
+    ///
     /// A lambda with a non-dependent context can be dependent if it occurs
     /// within the default argument of a function template, because the
     /// lambda will have been created with the enclosing context as its
     /// declaration context, rather than function. This is an unfortunate
-    /// artifact of having to parse the default arguments before. 
+    /// artifact of having to parse the default arguments before.
     unsigned Dependent : 1;
-    
+
     /// Whether this lambda is a generic lambda.
     unsigned IsGenericLambda : 1;
 
@@ -627,28 +629,28 @@ class CXXRecordDecl : public RecordDecl {
     /// The number of explicit captures in this lambda.
     unsigned NumExplicitCaptures : 13;
 
-    /// The number used to indicate this lambda expression for name 
+    /// The number used to indicate this lambda expression for name
     /// mangling in the Itanium C++ ABI.
     unsigned ManglingNumber = 0;
-    
+
     /// The declaration that provides context for this lambda, if the
     /// actual DeclContext does not suffice. This is used for lambdas that
     /// occur within default arguments of function parameters within the class
     /// or within a data member initializer.
     LazyDeclPtr ContextDecl;
-    
-    /// The list of captures, both explicit and implicit, for this 
+
+    /// The list of captures, both explicit and implicit, for this
     /// lambda.
     Capture *Captures = nullptr;
 
     /// The type of the call method.
     TypeSourceInfo *MethodTyInfo;
 
-    LambdaDefinitionData(CXXRecordDecl *D, TypeSourceInfo *Info, 
-                         bool Dependent, bool IsGeneric, 
-                         LambdaCaptureDefault CaptureDefault) 
-      : DefinitionData(D), Dependent(Dependent), IsGenericLambda(IsGeneric), 
-        CaptureDefault(CaptureDefault), NumCaptures(0), NumExplicitCaptures(0), 
+    LambdaDefinitionData(CXXRecordDecl *D, TypeSourceInfo *Info,
+                         bool Dependent, bool IsGeneric,
+                         LambdaCaptureDefault CaptureDefault)
+      : DefinitionData(D), Dependent(Dependent), IsGenericLambda(IsGeneric),
+        CaptureDefault(CaptureDefault), NumCaptures(0), NumExplicitCaptures(0),
         MethodTyInfo(Info) {
       IsLambda = true;
 
@@ -798,6 +800,18 @@ public:
 
   bool isDynamicClass() const {
     return data().Polymorphic || data().NumVBases != 0;
+  }
+
+  /// @returns true if class is dynamic or might be dynamic because the
+  /// definition is incomplete of dependent.
+  bool mayBeDynamicClass() const {
+    return !hasDefinition() || isDynamicClass() || hasAnyDependentBases();
+  }
+
+  /// @returns true if class is non dynamic or might be non dynamic because the
+  /// definition is incomplete of dependent.
+  bool mayBeNonDynamicClass() const {
+    return !hasDefinition() || !isDynamicClass() || hasAnyDependentBases();
   }
 
   void setIsParsingBaseSpecifiers() { data().IsParsingBaseSpecifiers = true; }
@@ -972,10 +986,7 @@ public:
   bool needsImplicitDefaultConstructor() const {
     return !data().UserDeclaredConstructor &&
            !(data().DeclaredSpecialMembers & SMF_DefaultConstructor) &&
-           // C++14 [expr.prim.lambda]p20:
-           //   The closure type associated with a lambda-expression has no
-           //   default constructor.
-           !isLambda();
+           (!isLambda() || lambdaIsDefaultConstructibleAndAssignable());
   }
 
   /// Determine whether this class has any user-declared constructors.
@@ -1165,10 +1176,7 @@ public:
            !hasUserDeclaredCopyAssignment() &&
            !hasUserDeclaredMoveConstructor() &&
            !hasUserDeclaredDestructor() &&
-           // C++1z [expr.prim.lambda]p21: "the closure type has a deleted copy
-           // assignment operator". The intent is that this counts as a user
-           // declared copy assignment, but we do not model it that way.
-           !isLambda();
+           (!isLambda() || lambdaIsDefaultConstructibleAndAssignable());
   }
 
   /// Determine whether we need to eagerly declare a move assignment
@@ -1203,24 +1211,31 @@ public:
     return DD && DD->IsLambda;
   }
 
-  /// Determine whether this class describes a generic 
+  /// Determine whether this class describes a generic
   /// lambda function object (i.e. function call operator is
-  /// a template). 
-  bool isGenericLambda() const; 
+  /// a template).
+  bool isGenericLambda() const;
+
+  /// Determine whether this lambda should have an implicit default constructor
+  /// and copy and move assignment operators.
+  bool lambdaIsDefaultConstructibleAndAssignable() const;
 
   /// Retrieve the lambda call operator of the closure type
   /// if this is a closure type.
-  CXXMethodDecl *getLambdaCallOperator() const; 
+  CXXMethodDecl *getLambdaCallOperator() const;
 
   /// Retrieve the lambda static invoker, the address of which
   /// is returned by the conversion operator, and the body of which
-  /// is forwarded to the lambda call operator. 
-  CXXMethodDecl *getLambdaStaticInvoker() const; 
+  /// is forwarded to the lambda call operator.
+  CXXMethodDecl *getLambdaStaticInvoker() const;
 
   /// Retrieve the generic lambda's template parameter list.
-  /// Returns null if the class does not represent a lambda or a generic 
+  /// Returns null if the class does not represent a lambda or a generic
   /// lambda.
   TemplateParameterList *getGenericLambdaTemplateParameterList() const;
+
+  /// Retrieve the lambda template parameters that were specified explicitly.
+  ArrayRef<NamedDecl *> getLambdaExplicitTemplateParameters() const;
 
   LambdaCaptureDefault getLambdaCaptureDefault() const {
     assert(isLambda());
@@ -1326,6 +1341,14 @@ public:
   /// \note This does NOT include a check for union-ness.
   bool isEmpty() const { return data().Empty; }
 
+  bool hasPrivateFields() const {
+    return data().HasPrivateFields;
+  }
+
+  bool hasProtectedFields() const {
+    return data().HasProtectedFields;
+  }
+
   /// Determine whether this class has direct non-static data members.
   bool hasDirectFields() const {
     auto &D = data();
@@ -1343,11 +1366,11 @@ public:
   /// not overridden.
   bool isAbstract() const { return data().Abstract; }
 
-  /// Determine whether this class is standard-layout per 
+  /// Determine whether this class is standard-layout per
   /// C++ [class]p7.
   bool isStandardLayout() const { return data().IsStandardLayout; }
 
-  /// Determine whether this class was standard-layout per 
+  /// Determine whether this class was standard-layout per
   /// C++11 [class]p7, specifically using the C++11 rules without any DRs.
   bool isCXX11StandardLayout() const { return data().IsCXX11StandardLayout; }
 
@@ -1541,7 +1564,7 @@ public:
   ///
   /// C++11 [class]p6:
   ///    "A trivial class is a class that has a trivial default constructor and
-  ///    is trivially copiable."
+  ///    is trivially copyable."
   bool isTrivial() const {
     return isTriviallyCopyable() && hasTrivialDefaultConstructor();
   }
@@ -1829,6 +1852,14 @@ public:
                                      CXXBasePath &Path, DeclarationName Name);
 
   /// Base-class lookup callback that determines whether there exists
+  /// an OpenMP declare mapper member with the given name.
+  ///
+  /// This callback can be used with \c lookupInBases() to find members
+  /// of the given name within a C++ class hierarchy.
+  static bool FindOMPMapperMember(const CXXBaseSpecifier *Specifier,
+                                  CXXBasePath &Path, DeclarationName Name);
+
+  /// Base-class lookup callback that determines whether there exists
   /// a member with the given name that can be used in a nested-name-specifier.
   ///
   /// This callback can be used with \c lookupInBases() to find members of
@@ -1898,25 +1929,25 @@ public:
   /// If this is the closure type of a lambda expression, retrieve the
   /// number to be used for name mangling in the Itanium C++ ABI.
   ///
-  /// Zero indicates that this closure type has internal linkage, so the 
+  /// Zero indicates that this closure type has internal linkage, so the
   /// mangling number does not matter, while a non-zero value indicates which
   /// lambda expression this is in this particular context.
   unsigned getLambdaManglingNumber() const {
     assert(isLambda() && "Not a lambda closure type!");
     return getLambdaData().ManglingNumber;
   }
-  
-  /// Retrieve the declaration that provides additional context for a 
+
+  /// Retrieve the declaration that provides additional context for a
   /// lambda, when the normal declaration context is not specific enough.
   ///
-  /// Certain contexts (default arguments of in-class function parameters and 
+  /// Certain contexts (default arguments of in-class function parameters and
   /// the initializers of data members) have separate name mangling rules for
   /// lambdas within the Itanium C++ ABI. For these cases, this routine provides
-  /// the declaration in which the lambda occurs, e.g., the function parameter 
+  /// the declaration in which the lambda occurs, e.g., the function parameter
   /// or the non-static data member. Otherwise, it returns NULL to imply that
   /// the declaration context suffices.
   Decl *getLambdaContextDecl() const;
-  
+
   /// Set the mangling number and context declaration for a lambda
   /// class.
   void setLambdaMangling(unsigned ManglingNumber, Decl *ContextDecl) {
@@ -1975,6 +2006,53 @@ public:
   }
 };
 
+/// Store information needed for an explicit specifier.
+/// used by CXXDeductionGuideDecl, CXXConstructorDecl and CXXConversionDecl.
+class ExplicitSpecifier {
+  llvm::PointerIntPair<Expr *, 2, ExplicitSpecKind> ExplicitSpec{
+      nullptr, ExplicitSpecKind::ResolvedFalse};
+
+public:
+  ExplicitSpecifier() = default;
+  ExplicitSpecifier(Expr *Expression, ExplicitSpecKind Kind)
+      : ExplicitSpec(Expression, Kind) {}
+  ExplicitSpecKind getKind() const { return ExplicitSpec.getInt(); }
+  const Expr *getExpr() const { return ExplicitSpec.getPointer(); }
+  Expr *getExpr() { return ExplicitSpec.getPointer(); }
+
+  /// Return true if the ExplicitSpecifier isn't defaulted.
+  bool isSpecified() const {
+    return ExplicitSpec.getInt() != ExplicitSpecKind::ResolvedFalse ||
+           ExplicitSpec.getPointer();
+  }
+
+  /// Check for Equivalence of explicit specifiers.
+  /// Return True if the explicit specifier are equivalent false otherwise.
+  bool isEquivalent(const ExplicitSpecifier Other) const;
+  /// Return true if the explicit specifier is already resolved to be explicit.
+  bool isExplicit() const {
+    return ExplicitSpec.getInt() == ExplicitSpecKind::ResolvedTrue;
+  }
+  /// Return true if the ExplicitSpecifier isn't valid.
+  /// This state occurs after a substitution failures.
+  bool isInvalid() const {
+    return ExplicitSpec.getInt() == ExplicitSpecKind::Unresolved &&
+           !ExplicitSpec.getPointer();
+  }
+  void setKind(ExplicitSpecKind Kind) { ExplicitSpec.setInt(Kind); }
+  void setExpr(Expr *E) { ExplicitSpec.setPointer(E); }
+  // getFromDecl - retrieve the explicit specifier in the given declaration.
+  // if the given declaration has no explicit. the returned explicit specifier
+  // is defaulted. .isSpecified() will be false.
+  static ExplicitSpecifier getFromDecl(FunctionDecl *Function);
+  static const ExplicitSpecifier getFromDecl(const FunctionDecl *Function) {
+    return getFromDecl(const_cast<FunctionDecl *>(Function));
+  }
+  static ExplicitSpecifier Invalid() {
+    return ExplicitSpecifier(nullptr, ExplicitSpecKind::Unresolved);
+  }
+};
+
 /// Represents a C++ deduction guide declaration.
 ///
 /// \code
@@ -1990,44 +2068,49 @@ class CXXDeductionGuideDecl : public FunctionDecl {
 
 private:
   CXXDeductionGuideDecl(ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
-                        bool IsExplicit, const DeclarationNameInfo &NameInfo,
-                        QualType T, TypeSourceInfo *TInfo,
-                        SourceLocation EndLocation)
+                        ExplicitSpecifier ES,
+                        const DeclarationNameInfo &NameInfo, QualType T,
+                        TypeSourceInfo *TInfo, SourceLocation EndLocation)
       : FunctionDecl(CXXDeductionGuide, C, DC, StartLoc, NameInfo, T, TInfo,
-                     SC_None, false, false) {
+                     SC_None, false, CSK_unspecified),
+        ExplicitSpec(ES) {
     if (EndLocation.isValid())
       setRangeEnd(EndLocation);
-    IsExplicitSpecified = IsExplicit;
+    setIsCopyDeductionCandidate(false);
   }
+
+  ExplicitSpecifier ExplicitSpec;
+  void setExplicitSpecifier(ExplicitSpecifier ES) { ExplicitSpec = ES; }
 
 public:
   friend class ASTDeclReader;
   friend class ASTDeclWriter;
 
-  static CXXDeductionGuideDecl *Create(ASTContext &C, DeclContext *DC,
-                                       SourceLocation StartLoc, bool IsExplicit,
-                                       const DeclarationNameInfo &NameInfo,
-                                       QualType T, TypeSourceInfo *TInfo,
-                                       SourceLocation EndLocation);
+  static CXXDeductionGuideDecl *
+  Create(ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
+         ExplicitSpecifier ES, const DeclarationNameInfo &NameInfo, QualType T,
+         TypeSourceInfo *TInfo, SourceLocation EndLocation);
 
   static CXXDeductionGuideDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
-  /// Whether this deduction guide is explicit.
-  bool isExplicit() const { return IsExplicitSpecified; }
+  ExplicitSpecifier getExplicitSpecifier() { return ExplicitSpec; }
+  const ExplicitSpecifier getExplicitSpecifier() const { return ExplicitSpec; }
 
-  /// Whether this deduction guide was declared with the 'explicit' specifier.
-  bool isExplicitSpecified() const { return IsExplicitSpecified; }
+  /// Return true if the declartion is already resolved to be explicit.
+  bool isExplicit() const { return ExplicitSpec.isExplicit(); }
 
   /// Get the template for which this guide performs deduction.
   TemplateDecl *getDeducedTemplate() const {
     return getDeclName().getCXXDeductionGuideTemplate();
   }
 
-  void setIsCopyDeductionCandidate() {
-    IsCopyDeductionCandidate = true;
+  void setIsCopyDeductionCandidate(bool isCDC = true) {
+    FunctionDeclBits.IsCopyDeductionCandidate = isCDC;
   }
 
-  bool isCopyDeductionCandidate() const { return IsCopyDeductionCandidate; }
+  bool isCopyDeductionCandidate() const {
+    return FunctionDeclBits.IsCopyDeductionCandidate;
+  }
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -2044,11 +2127,11 @@ class CXXMethodDecl : public FunctionDecl {
 protected:
   CXXMethodDecl(Kind DK, ASTContext &C, CXXRecordDecl *RD,
                 SourceLocation StartLoc, const DeclarationNameInfo &NameInfo,
-                QualType T, TypeSourceInfo *TInfo,
-                StorageClass SC, bool isInline,
-                bool isConstexpr, SourceLocation EndLocation)
-    : FunctionDecl(DK, C, RD, StartLoc, NameInfo, T, TInfo,
-                   SC, isInline, isConstexpr) {
+                QualType T, TypeSourceInfo *TInfo, StorageClass SC,
+                bool isInline, ConstexprSpecKind ConstexprKind,
+                SourceLocation EndLocation)
+      : FunctionDecl(DK, C, RD, StartLoc, NameInfo, T, TInfo, SC, isInline,
+                     ConstexprKind) {
     if (EndLocation.isValid())
       setRangeEnd(EndLocation);
   }
@@ -2056,11 +2139,9 @@ protected:
 public:
   static CXXMethodDecl *Create(ASTContext &C, CXXRecordDecl *RD,
                                SourceLocation StartLoc,
-                               const DeclarationNameInfo &NameInfo,
-                               QualType T, TypeSourceInfo *TInfo,
-                               StorageClass SC,
-                               bool isInline,
-                               bool isConstexpr,
+                               const DeclarationNameInfo &NameInfo, QualType T,
+                               TypeSourceInfo *TInfo, StorageClass SC,
+                               bool isInline, ConstexprSpecKind ConstexprKind,
                                SourceLocation EndLocation);
 
   static CXXMethodDecl *CreateDeserialized(ASTContext &C, unsigned ID);
@@ -2115,10 +2196,15 @@ public:
         Base, IsAppleKext);
   }
 
-  /// Determine whether this is a usual deallocation function
-  /// (C++ [basic.stc.dynamic.deallocation]p2), which is an overloaded
-  /// delete or delete[] operator with a particular signature.
-  bool isUsualDeallocationFunction() const;
+  /// Determine whether this is a usual deallocation function (C++
+  /// [basic.stc.dynamic.deallocation]p2), which is an overloaded delete or
+  /// delete[] operator with a particular signature. Populates \p PreventedBy
+  /// with the declarations of the functions of the same kind if they were the
+  /// reason for this function returning false. This is used by
+  /// Sema::isUsualDeallocationFunction to reconsider the answer based on the
+  /// context.
+  bool isUsualDeallocationFunction(
+      SmallVectorImpl<const FunctionDecl *> &PreventedBy) const;
 
   /// Determine whether this is a copy-assignment operator, regardless
   /// of whether it was declared implicitly or explicitly.
@@ -2164,29 +2250,40 @@ public:
 
   overridden_method_range overridden_methods() const;
 
-  /// Returns the parent of this method declaration, which
+  /// Return the parent of this method declaration, which
   /// is the class in which this method is defined.
   const CXXRecordDecl *getParent() const {
     return cast<CXXRecordDecl>(FunctionDecl::getParent());
   }
 
-  /// Returns the parent of this method declaration, which
+  /// Return the parent of this method declaration, which
   /// is the class in which this method is defined.
   CXXRecordDecl *getParent() {
     return const_cast<CXXRecordDecl *>(
              cast<CXXRecordDecl>(FunctionDecl::getParent()));
   }
 
-  /// Returns the type of the \c this pointer.
+  /// Return the type of the \c this pointer.
   ///
   /// Should only be called for instance (i.e., non-static) methods. Note
   /// that for the call operator of a lambda closure type, this returns the
   /// desugared 'this' type (a pointer to the closure type), not the captured
   /// 'this' type.
-  QualType getThisType(ASTContext &C) const;
+  QualType getThisType() const;
 
-  unsigned getTypeQualifiers() const {
-    return getType()->getAs<FunctionProtoType>()->getTypeQuals();
+  /// Return the type of the object pointed by \c this.
+  ///
+  /// See getThisType() for usage restriction.
+  QualType getThisObjectType() const;
+
+  static QualType getThisType(const FunctionProtoType *FPT,
+                              const CXXRecordDecl *Decl);
+
+  static QualType getThisObjectType(const FunctionProtoType *FPT,
+                                    const CXXRecordDecl *Decl);
+
+  Qualifiers getMethodQualifiers() const {
+    return getType()->getAs<FunctionProtoType>()->getMethodQuals();
   }
 
   /// Retrieve the ref-qualifier associated with this method.
@@ -2229,6 +2326,17 @@ public:
                                 bool MayBeBase = false) const {
     return const_cast<CXXMethodDecl *>(this)
               ->getCorrespondingMethodInClass(RD, MayBeBase);
+  }
+
+  /// Find if \p RD declares a function that overrides this function, and if so,
+  /// return it. Does not search base classes.
+  CXXMethodDecl *getCorrespondingMethodDeclaredInClass(const CXXRecordDecl *RD,
+                                                       bool MayBeBase = false);
+  const CXXMethodDecl *
+  getCorrespondingMethodDeclaredInClass(const CXXRecordDecl *RD,
+                                        bool MayBeBase = false) const {
+    return const_cast<CXXMethodDecl *>(this)
+        ->getCorrespondingMethodDeclaredInClass(RD, MayBeBase);
   }
 
   // Implement isa/cast/dyncast/etc.
@@ -2317,6 +2425,9 @@ public:
   explicit
   CXXCtorInitializer(ASTContext &Context, TypeSourceInfo *TInfo,
                      SourceLocation L, Expr *Init, SourceLocation R);
+
+  /// \return Unique reproducible object identifier.
+  int64_t getID(const ASTContext &Context) const;
 
   /// Determine whether this initializer is initializing a base class.
   bool isBaseInitializer() const {
@@ -2480,34 +2591,60 @@ public:
 /// \endcode
 class CXXConstructorDecl final
     : public CXXMethodDecl,
-      private llvm::TrailingObjects<CXXConstructorDecl, InheritedConstructor> {
+      private llvm::TrailingObjects<CXXConstructorDecl, InheritedConstructor,
+                                    ExplicitSpecifier> {
+  // This class stores some data in DeclContext::CXXConstructorDeclBits
+  // to save some space. Use the provided accessors to access it.
+
   /// \name Support for base and member initializers.
   /// \{
   /// The arguments used to initialize the base or member.
   LazyCXXCtorInitializersPtr CtorInitializers;
-  unsigned NumCtorInitializers : 31;
-  /// \}
-
-  /// Whether this constructor declaration is an implicitly-declared
-  /// inheriting constructor.
-  unsigned IsInheritingConstructor : 1;
 
   CXXConstructorDecl(ASTContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
-                     const DeclarationNameInfo &NameInfo,
-                     QualType T, TypeSourceInfo *TInfo,
-                     bool isExplicitSpecified, bool isInline,
-                     bool isImplicitlyDeclared, bool isConstexpr,
-                     InheritedConstructor Inherited)
-    : CXXMethodDecl(CXXConstructor, C, RD, StartLoc, NameInfo, T, TInfo,
-                    SC_None, isInline, isConstexpr, SourceLocation()),
-      NumCtorInitializers(0), IsInheritingConstructor((bool)Inherited) {
-    setImplicit(isImplicitlyDeclared);
-    if (Inherited)
-      *getTrailingObjects<InheritedConstructor>() = Inherited;
-    IsExplicitSpecified = isExplicitSpecified;
-  }
+                     const DeclarationNameInfo &NameInfo, QualType T,
+                     TypeSourceInfo *TInfo, ExplicitSpecifier ES, bool isInline,
+                     bool isImplicitlyDeclared, ConstexprSpecKind ConstexprKind,
+                     InheritedConstructor Inherited);
 
   void anchor() override;
+
+  size_t numTrailingObjects(OverloadToken<InheritedConstructor>) const {
+    return CXXConstructorDeclBits.IsInheritingConstructor;
+  }
+  size_t numTrailingObjects(OverloadToken<ExplicitSpecifier>) const {
+    return CXXConstructorDeclBits.HasTrailingExplicitSpecifier;
+  }
+
+  ExplicitSpecifier getExplicitSpecifierInternal() const {
+    if (CXXConstructorDeclBits.HasTrailingExplicitSpecifier)
+      return *getCanonicalDecl()->getTrailingObjects<ExplicitSpecifier>();
+    return ExplicitSpecifier(
+        nullptr, getCanonicalDecl()->CXXConstructorDeclBits.IsSimpleExplicit
+                     ? ExplicitSpecKind::ResolvedTrue
+                     : ExplicitSpecKind::ResolvedFalse);
+  }
+
+  void setExplicitSpecifier(ExplicitSpecifier ES) {
+    assert((!ES.getExpr() ||
+            CXXConstructorDeclBits.HasTrailingExplicitSpecifier) &&
+           "cannot set this explicit specifier. no trail-allocated space for "
+           "explicit");
+    if (ES.getExpr())
+      *getCanonicalDecl()->getTrailingObjects<ExplicitSpecifier>() = ES;
+    else
+      CXXConstructorDeclBits.IsSimpleExplicit = ES.isExplicit();
+  }
+
+  enum TraillingAllocKind {
+    TAKInheritsConstructor = 1,
+    TAKHasTailExplicit = 1 << 1,
+  };
+
+  uint64_t getTraillingAllocKind() const {
+    return numTrailingObjects(OverloadToken<InheritedConstructor>()) |
+           (numTrailingObjects(OverloadToken<ExplicitSpecifier>()) << 1);
+  }
 
 public:
   friend class ASTDeclReader;
@@ -2515,13 +2652,23 @@ public:
   friend TrailingObjects;
 
   static CXXConstructorDecl *CreateDeserialized(ASTContext &C, unsigned ID,
-                                                bool InheritsConstructor);
+                                                uint64_t AllocKind);
   static CXXConstructorDecl *
   Create(ASTContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
          const DeclarationNameInfo &NameInfo, QualType T, TypeSourceInfo *TInfo,
-         bool isExplicit, bool isInline, bool isImplicitlyDeclared,
-         bool isConstexpr,
+         ExplicitSpecifier ES, bool isInline, bool isImplicitlyDeclared,
+         ConstexprSpecKind ConstexprKind,
          InheritedConstructor Inherited = InheritedConstructor());
+
+  ExplicitSpecifier getExplicitSpecifier() {
+    return getExplicitSpecifierInternal();
+  }
+  const ExplicitSpecifier getExplicitSpecifier() const {
+    return getExplicitSpecifierInternal();
+  }
+
+  /// Return true if the declartion is already resolved to be explicit.
+  bool isExplicit() const { return getExplicitSpecifier().isExplicit(); }
 
   /// Iterates through the member/base initializer list.
   using init_iterator = CXXCtorInitializer **;
@@ -2548,12 +2695,12 @@ public:
 
   /// Retrieve an iterator past the last initializer.
   init_iterator       init_end()       {
-    return init_begin() + NumCtorInitializers;
+    return init_begin() + getNumCtorInitializers();
   }
 
   /// Retrieve an iterator past the last initializer.
   init_const_iterator init_end() const {
-    return init_begin() + NumCtorInitializers;
+    return init_begin() + getNumCtorInitializers();
   }
 
   using init_reverse_iterator = std::reverse_iterator<init_iterator>;
@@ -2577,23 +2724,20 @@ public:
   /// Determine the number of arguments used to initialize the member
   /// or base.
   unsigned getNumCtorInitializers() const {
-      return NumCtorInitializers;
+      return CXXConstructorDeclBits.NumCtorInitializers;
   }
 
   void setNumCtorInitializers(unsigned numCtorInitializers) {
-    NumCtorInitializers = numCtorInitializers;
+    CXXConstructorDeclBits.NumCtorInitializers = numCtorInitializers;
+    // This assert added because NumCtorInitializers is stored
+    // in CXXConstructorDeclBits as a bitfield and its width has
+    // been shrunk from 32 bits to fit into CXXConstructorDeclBitfields.
+    assert(CXXConstructorDeclBits.NumCtorInitializers ==
+           numCtorInitializers && "NumCtorInitializers overflow!");
   }
 
   void setCtorInitializers(CXXCtorInitializer **Initializers) {
     CtorInitializers = Initializers;
-  }
-
-  /// Whether this function is marked as explicit explicitly.
-  bool isExplicitSpecified() const { return IsExplicitSpecified; }
-
-  /// Whether this function is explicit.
-  bool isExplicit() const {
-    return getCanonicalDecl()->isExplicitSpecified();
   }
 
   /// Determine whether this constructor is a delegating constructor.
@@ -2671,12 +2815,20 @@ public:
 
   /// Determine whether this is an implicit constructor synthesized to
   /// model a call to a constructor inherited from a base class.
-  bool isInheritingConstructor() const { return IsInheritingConstructor; }
+  bool isInheritingConstructor() const {
+    return CXXConstructorDeclBits.IsInheritingConstructor;
+  }
+
+  /// State that this is an implicit constructor synthesized to
+  /// model a call to a constructor inherited from a base class.
+  void setInheritingConstructor(bool isIC = true) {
+    CXXConstructorDeclBits.IsInheritingConstructor = isIC;
+  }
 
   /// Get the constructor that this inheriting constructor is based on.
   InheritedConstructor getInheritedConstructor() const {
-    return IsInheritingConstructor ? *getTrailingObjects<InheritedConstructor>()
-                                   : InheritedConstructor();
+    return isInheritingConstructor() ?
+      *getTrailingObjects<InheritedConstructor>() : InheritedConstructor();
   }
 
   CXXConstructorDecl *getCanonicalDecl() override {
@@ -2711,12 +2863,11 @@ class CXXDestructorDecl : public CXXMethodDecl {
   Expr *OperatorDeleteThisArg = nullptr;
 
   CXXDestructorDecl(ASTContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
-                    const DeclarationNameInfo &NameInfo,
-                    QualType T, TypeSourceInfo *TInfo,
-                    bool isInline, bool isImplicitlyDeclared)
-    : CXXMethodDecl(CXXDestructor, C, RD, StartLoc, NameInfo, T, TInfo,
-                    SC_None, isInline, /*isConstexpr=*/false, SourceLocation())
-  {
+                    const DeclarationNameInfo &NameInfo, QualType T,
+                    TypeSourceInfo *TInfo, bool isInline,
+                    bool isImplicitlyDeclared)
+      : CXXMethodDecl(CXXDestructor, C, RD, StartLoc, NameInfo, T, TInfo,
+                      SC_None, isInline, CSK_unspecified, SourceLocation()) {
     setImplicit(isImplicitlyDeclared);
   }
 
@@ -2766,36 +2917,38 @@ public:
 class CXXConversionDecl : public CXXMethodDecl {
   CXXConversionDecl(ASTContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
                     const DeclarationNameInfo &NameInfo, QualType T,
-                    TypeSourceInfo *TInfo, bool isInline,
-                    bool isExplicitSpecified, bool isConstexpr,
-                    SourceLocation EndLocation)
+                    TypeSourceInfo *TInfo, bool isInline, ExplicitSpecifier ES,
+                    ConstexprSpecKind ConstexprKind, SourceLocation EndLocation)
       : CXXMethodDecl(CXXConversion, C, RD, StartLoc, NameInfo, T, TInfo,
-                      SC_None, isInline, isConstexpr, EndLocation) {
-    IsExplicitSpecified = isExplicitSpecified;
-  }
-
+                      SC_None, isInline, ConstexprKind, EndLocation),
+        ExplicitSpec(ES) {}
   void anchor() override;
+
+  ExplicitSpecifier ExplicitSpec;
+
+  void setExplicitSpecifier(ExplicitSpecifier ES) { ExplicitSpec = ES; }
 
 public:
   friend class ASTDeclReader;
   friend class ASTDeclWriter;
 
-  static CXXConversionDecl *Create(ASTContext &C, CXXRecordDecl *RD,
-                                   SourceLocation StartLoc,
-                                   const DeclarationNameInfo &NameInfo,
-                                   QualType T, TypeSourceInfo *TInfo,
-                                   bool isInline, bool isExplicit,
-                                   bool isConstexpr,
-                                   SourceLocation EndLocation);
+  static CXXConversionDecl *
+  Create(ASTContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
+         const DeclarationNameInfo &NameInfo, QualType T, TypeSourceInfo *TInfo,
+         bool isInline, ExplicitSpecifier ES, ConstexprSpecKind ConstexprKind,
+         SourceLocation EndLocation);
   static CXXConversionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
-  /// Whether this function is marked as explicit explicitly.
-  bool isExplicitSpecified() const { return IsExplicitSpecified; }
-
-  /// Whether this function is explicit.
-  bool isExplicit() const {
-    return getCanonicalDecl()->isExplicitSpecified();
+  ExplicitSpecifier getExplicitSpecifier() {
+    return getCanonicalDecl()->ExplicitSpec;
   }
+
+  const ExplicitSpecifier getExplicitSpecifier() const {
+    return getCanonicalDecl()->ExplicitSpec;
+  }
+
+  /// Return true if the declartion is already resolved to be explicit.
+  bool isExplicit() const { return getExplicitSpecifier().isExplicit(); }
 
   /// Returns the type that this conversion function is converting to.
   QualType getConversionType() const {
@@ -2805,7 +2958,7 @@ public:
   /// Determine whether this conversion function is a conversion from
   /// a lambda closure type to a block pointer.
   bool isLambdaToBlockPointerConversion() const;
-  
+
   CXXConversionDecl *getCanonicalDecl() override {
     return cast<CXXConversionDecl>(FunctionDecl::getCanonicalDecl());
   }
@@ -2818,7 +2971,7 @@ public:
   static bool classofKind(Kind K) { return K == CXXConversion; }
 };
 
-/// Represents a linkage specification. 
+/// Represents a linkage specification.
 ///
 /// For example:
 /// \code
@@ -2826,7 +2979,8 @@ public:
 /// \endcode
 class LinkageSpecDecl : public Decl, public DeclContext {
   virtual void anchor();
-
+  // This class stores some data in DeclContext::LinkageSpecDeclBits to save
+  // some space. Use the provided accessors to access it.
 public:
   /// Represents the language in a linkage specification.
   ///
@@ -2840,16 +2994,6 @@ public:
   };
 
 private:
-  /// The language for this linkage specification.
-  unsigned Language : 3;
-
-  /// True if this linkage spec has braces.
-  ///
-  /// This is needed so that hasBraces() returns the correct result while the
-  /// linkage spec body is being parsed.  Once RBraceLoc has been set this is
-  /// not used, so it doesn't need to be serialized.
-  unsigned HasBraces : 1;
-
   /// The source location for the extern keyword.
   SourceLocation ExternLoc;
 
@@ -2857,10 +3001,7 @@ private:
   SourceLocation RBraceLoc;
 
   LinkageSpecDecl(DeclContext *DC, SourceLocation ExternLoc,
-                  SourceLocation LangLoc, LanguageIDs lang, bool HasBraces)
-      : Decl(LinkageSpec, DC, LangLoc), DeclContext(LinkageSpec),
-        Language(lang), HasBraces(HasBraces), ExternLoc(ExternLoc),
-        RBraceLoc(SourceLocation()) {}
+                  SourceLocation LangLoc, LanguageIDs lang, bool HasBraces);
 
 public:
   static LinkageSpecDecl *Create(ASTContext &C, DeclContext *DC,
@@ -2868,18 +3009,20 @@ public:
                                  SourceLocation LangLoc, LanguageIDs Lang,
                                  bool HasBraces);
   static LinkageSpecDecl *CreateDeserialized(ASTContext &C, unsigned ID);
-  
+
   /// Return the language specified by this linkage specification.
-  LanguageIDs getLanguage() const { return LanguageIDs(Language); }
+  LanguageIDs getLanguage() const {
+    return static_cast<LanguageIDs>(LinkageSpecDeclBits.Language);
+  }
 
   /// Set the language specified by this linkage specification.
-  void setLanguage(LanguageIDs L) { Language = L; }
+  void setLanguage(LanguageIDs L) { LinkageSpecDeclBits.Language = L; }
 
   /// Determines whether this linkage specification had braces in
   /// its syntactic form.
   bool hasBraces() const {
-    assert(!RBraceLoc.isValid() || HasBraces);
-    return HasBraces;
+    assert(!RBraceLoc.isValid() || LinkageSpecDeclBits.HasBraces);
+    return LinkageSpecDeclBits.HasBraces;
   }
 
   SourceLocation getExternLoc() const { return ExternLoc; }
@@ -2887,19 +3030,19 @@ public:
   void setExternLoc(SourceLocation L) { ExternLoc = L; }
   void setRBraceLoc(SourceLocation L) {
     RBraceLoc = L;
-    HasBraces = RBraceLoc.isValid();
+    LinkageSpecDeclBits.HasBraces = RBraceLoc.isValid();
   }
 
-  SourceLocation getLocEnd() const LLVM_READONLY {
+  SourceLocation getEndLoc() const LLVM_READONLY {
     if (hasBraces())
       return getRBraceLoc();
     // No braces: get the end location of the (only) declaration in context
     // (if present).
-    return decls_empty() ? getLocation() : decls_begin()->getLocEnd();
+    return decls_empty() ? getLocation() : decls_begin()->getEndLoc();
   }
 
   SourceRange getSourceRange() const override LLVM_READONLY {
-    return SourceRange(ExternLoc, getLocEnd());
+    return SourceRange(ExternLoc, getEndLoc());
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -3704,7 +3847,7 @@ class UnresolvedUsingTypenameDecl
 
 public:
   /// Returns the source location of the 'using' keyword.
-  SourceLocation getUsingLoc() const { return getLocStart(); }
+  SourceLocation getUsingLoc() const { return getBeginLoc(); }
 
   /// Returns the source location of the 'typename' keyword.
   SourceLocation getTypenameLoc() const { return TypenameLocation; }
@@ -3776,7 +3919,7 @@ public:
                                   Expr *AssertExpr, StringLiteral *Message,
                                   SourceLocation RParenLoc, bool Failed);
   static StaticAssertDecl *CreateDeserialized(ASTContext &C, unsigned ID);
-  
+
   Expr *getAssertExpr() { return AssertExprAndFailed.getPointer(); }
   const Expr *getAssertExpr() const { return AssertExprAndFailed.getPointer(); }
 
@@ -3804,6 +3947,8 @@ public:
 /// x[0], x[1], and x[2] respectively, where x is the implicit
 /// DecompositionDecl of type 'int (&)[3]'.
 class BindingDecl : public ValueDecl {
+  /// The declaration that this binding binds to part of.
+  LazyDeclPtr Decomp;
   /// The binding represented by this declaration. References to this
   /// declaration are effectively equivalent to this expression (except
   /// that it is only evaluated once at the point of declaration of the
@@ -3827,6 +3972,10 @@ public:
   /// decomposition declaration, and when the initializer is type-dependent.
   Expr *getBinding() const { return Binding; }
 
+  /// Get the decomposition declaration that this binding represents a
+  /// decomposition of.
+  ValueDecl *getDecomposedDecl() const;
+
   /// Get the variable (if any) that holds the value of evaluating the binding.
   /// Only present for user-defined bindings for tuple-like types.
   VarDecl *getHoldingVar() const;
@@ -3838,6 +3987,9 @@ public:
     setType(DeclaredType);
     this->Binding = Binding;
   }
+
+  /// Set the decomposed variable for this BindingDecl.
+  void setDecomposedDecl(ValueDecl *Decomposed) { Decomp = Decomposed; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == Decl::Binding; }
@@ -3866,6 +4018,8 @@ class DecompositionDecl final
         NumBindings(Bindings.size()) {
     std::uninitialized_copy(Bindings.begin(), Bindings.end(),
                             getTrailingObjects<BindingDecl *>());
+    for (auto *B : Bindings)
+      B->setDecomposedDecl(this);
   }
 
   void anchor() override;
@@ -3929,6 +4083,7 @@ class MSPropertyDecl : public DeclaratorDecl {
       : DeclaratorDecl(MSProperty, DC, L, N, T, TInfo, StartL),
         GetterId(Getter), SetterId(Setter) {}
 
+  void anchor() override;
 public:
   friend class ASTDeclReader;
 

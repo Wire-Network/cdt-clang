@@ -1,9 +1,8 @@
 //===- UninitializedValues.cpp - Find Uninitialized Values ----------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -62,13 +61,13 @@ class DeclToIndex {
 
 public:
   DeclToIndex() = default;
-  
+
   /// Compute the actual mapping from declarations to bits.
   void computeMap(const DeclContext &dc);
-  
+
   /// Return the number of declarations in the map.
   unsigned size() const { return map.size(); }
-  
+
   /// Returns the bit vector index for a given declaration.
   Optional<unsigned> getValueIndex(const VarDecl *d) const;
 };
@@ -126,8 +125,8 @@ public:
   CFGBlockValues(const CFG &cfg);
 
   unsigned getNumEntries() const { return declToIndex.size(); }
-  
-  void computeSetOfDeclarations(const DeclContext &dc);  
+
+  void computeSetOfDeclarations(const DeclContext &dc);
 
   ValueVector &getValueVector(const CFGBlock *block) {
     return vals[block->getBlockID()];
@@ -136,13 +135,13 @@ public:
   void setAllScratchValues(Value V);
   void mergeIntoScratch(ValueVector const &source, bool isFirst);
   bool updateValueVectorWithScratch(const CFGBlock *block);
-  
+
   bool hasNoDeclarations() const {
     return declToIndex.size() == 0;
   }
 
   void resetScratch();
-  
+
   ValueVector::reference operator[](const VarDecl *vd);
 
   Value getValue(const CFGBlock *block, const CFGBlock *dstBlock,
@@ -151,7 +150,7 @@ public:
     assert(idx.hasValue());
     return getValueVector(block)[idx.getValue()];
   }
-};  
+};
 
 } // namespace
 
@@ -235,7 +234,7 @@ public:
       ++PO_I;
     }
   }
-  
+
   void enqueueSuccessors(const CFGBlock *block);
   const CFGBlock *dequeue();
 };
@@ -351,6 +350,7 @@ public:
   void VisitBinaryOperator(BinaryOperator *BO);
   void VisitCallExpr(CallExpr *CE);
   void VisitCastExpr(CastExpr *CE);
+  void VisitOMPExecutableDirective(OMPExecutableDirective *ED);
 
   void operator()(Stmt *S) { Visit(S); }
 
@@ -456,6 +456,11 @@ void ClassifyRefs::VisitUnaryOperator(UnaryOperator *UO) {
     classify(UO->getSubExpr(), Use);
 }
 
+void ClassifyRefs::VisitOMPExecutableDirective(OMPExecutableDirective *ED) {
+  for (Stmt *S : OMPExecutableDirective::used_clauses_children(ED->clauses()))
+    classify(cast<Expr>(S), Use);
+}
+
 static bool isPointerToConst(const QualType &QT) {
   return QT->isAnyPointerType() && QT->getPointeeType().isConstQualified();
 }
@@ -533,6 +538,7 @@ public:
   void VisitDeclStmt(DeclStmt *ds);
   void VisitObjCForCollectionStmt(ObjCForCollectionStmt *FS);
   void VisitObjCMessageExpr(ObjCMessageExpr *ME);
+  void VisitOMPExecutableDirective(OMPExecutableDirective *ED);
 
   bool isTrackedVar(const VarDecl *vd) {
     return ::isTrackedVar(vd, cast<DeclContext>(ac.getDecl()));
@@ -614,7 +620,7 @@ public:
         const CFGBlock *Pred = *I;
         if (!Pred)
           continue;
-        
+
         Value AtPredExit = vals.getValue(Pred, B, vd);
         if (AtPredExit == Initialized)
           // This block initializes the variable.
@@ -652,7 +658,7 @@ public:
     // uninitialized.
     for (const auto *Block : cfg) {
       unsigned BlockID = Block->getBlockID();
-      const Stmt *Term = Block->getTerminator();
+      const Stmt *Term = Block->getTerminatorStmt();
       if (SuccsVisited[BlockID] && SuccsVisited[BlockID] < Block->succ_size() &&
           Term) {
         // This block inevitably leads to the use. If we have an edge from here
@@ -706,6 +712,16 @@ void TransferFunctions::VisitObjCForCollectionStmt(ObjCForCollectionStmt *FS) {
     if (isTrackedVar(VD))
       vals[VD] = Initialized;
   }
+}
+
+void TransferFunctions::VisitOMPExecutableDirective(
+    OMPExecutableDirective *ED) {
+  for (Stmt *S : OMPExecutableDirective::used_clauses_children(ED->clauses())) {
+    assert(S && "Expected non-null used-in-clause child.");
+    Visit(S);
+  }
+  if (!ED->isStandaloneDirective())
+    Visit(ED->getStructuredBlock());
 }
 
 void TransferFunctions::VisitBlockExpr(BlockExpr *be) {
@@ -923,7 +939,7 @@ void clang::runUninitializedVariablesAnalysis(
                               classification, wasAnalyzed, PBH);
     ++stats.NumBlockVisits;
     if (changed || !previouslyVisited[block->getBlockID()])
-      worklist.enqueueSuccessors(block);    
+      worklist.enqueueSuccessors(block);
     previouslyVisited[block->getBlockID()] = true;
   }
 

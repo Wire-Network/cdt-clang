@@ -1,9 +1,8 @@
 //===- unittest/Tooling/ToolingTest.cpp - Tooling unit tests --------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -149,10 +148,10 @@ TEST(newFrontendActionFactory, CreatesFrontendActionFactoryFromFactoryType) {
 }
 
 TEST(ToolInvocation, TestMapVirtualFile) {
-  llvm::IntrusiveRefCntPtr<vfs::OverlayFileSystem> OverlayFileSystem(
-      new vfs::OverlayFileSystem(vfs::getRealFileSystem()));
-  llvm::IntrusiveRefCntPtr<vfs::InMemoryFileSystem> InMemoryFileSystem(
-      new vfs::InMemoryFileSystem);
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
   llvm::IntrusiveRefCntPtr<FileManager> Files(
       new FileManager(FileSystemOptions(), OverlayFileSystem));
@@ -175,10 +174,10 @@ TEST(ToolInvocation, TestVirtualModulesCompilation) {
   // mapped module.map is found on the include path. In the future, expand this
   // test to run a full modules enabled compilation, so we make sure we can
   // rerun modules compilations with a virtual file system.
-  llvm::IntrusiveRefCntPtr<vfs::OverlayFileSystem> OverlayFileSystem(
-      new vfs::OverlayFileSystem(vfs::getRealFileSystem()));
-  llvm::IntrusiveRefCntPtr<vfs::InMemoryFileSystem> InMemoryFileSystem(
-      new vfs::InMemoryFileSystem);
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
   llvm::IntrusiveRefCntPtr<FileManager> Files(
       new FileManager(FileSystemOptions(), OverlayFileSystem));
@@ -383,7 +382,7 @@ TEST(ClangToolTest, ArgumentAdjusters) {
   ArgumentsAdjuster CheckSyntaxOnlyAdjuster =
       [&Found, &Ran](const CommandLineArguments &Args, StringRef /*unused*/) {
     Ran = true;
-    if (std::find(Args.begin(), Args.end(), "-fsyntax-only") != Args.end())
+    if (llvm::is_contained(Args, "-fsyntax-only"))
       Found = true;
     return Args;
   };
@@ -401,12 +400,39 @@ TEST(ClangToolTest, ArgumentAdjusters) {
   EXPECT_FALSE(Found);
 }
 
+TEST(ClangToolTest, NoDoubleSyntaxOnly) {
+  FixedCompilationDatabase Compilations("/", {"-fsyntax-only"});
+
+  ClangTool Tool(Compilations, std::vector<std::string>(1, "/a.cc"));
+  Tool.mapVirtualFile("/a.cc", "void a() {}");
+
+  std::unique_ptr<FrontendActionFactory> Action(
+      newFrontendActionFactory<SyntaxOnlyAction>());
+
+  size_t SyntaxOnlyCount = 0;
+  ArgumentsAdjuster CheckSyntaxOnlyAdjuster =
+      [&SyntaxOnlyCount](const CommandLineArguments &Args,
+                         StringRef /*unused*/) {
+        for (llvm::StringRef Arg : Args) {
+          if (Arg == "-fsyntax-only")
+            ++SyntaxOnlyCount;
+        }
+        return Args;
+      };
+
+  Tool.clearArgumentsAdjusters();
+  Tool.appendArgumentsAdjuster(getClangSyntaxOnlyAdjuster());
+  Tool.appendArgumentsAdjuster(CheckSyntaxOnlyAdjuster);
+  Tool.run(Action.get());
+  EXPECT_EQ(SyntaxOnlyCount, 1U);
+}
+
 TEST(ClangToolTest, BaseVirtualFileSystemUsage) {
   FixedCompilationDatabase Compilations("/", std::vector<std::string>());
-  llvm::IntrusiveRefCntPtr<vfs::OverlayFileSystem> OverlayFileSystem(
-      new vfs::OverlayFileSystem(vfs::getRealFileSystem()));
-  llvm::IntrusiveRefCntPtr<vfs::InMemoryFileSystem> InMemoryFileSystem(
-      new vfs::InMemoryFileSystem);
+  llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
+      new llvm::vfs::OverlayFileSystem(llvm::vfs::getRealFileSystem()));
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFileSystem(
+      new llvm::vfs::InMemoryFileSystem);
   OverlayFileSystem->pushOverlay(InMemoryFileSystem);
 
   InMemoryFileSystem->addFile(
@@ -441,13 +467,42 @@ TEST(ClangToolTest, StripDependencyFileAdjuster) {
   Tool.run(Action.get());
 
   auto HasFlag = [&FinalArgs](const std::string &Flag) {
-    return std::find(FinalArgs.begin(), FinalArgs.end(), Flag) !=
-           FinalArgs.end();
+    return llvm::find(FinalArgs, Flag) != FinalArgs.end();
   };
   EXPECT_FALSE(HasFlag("-MD"));
   EXPECT_FALSE(HasFlag("-MMD"));
   EXPECT_TRUE(HasFlag("-c"));
   EXPECT_TRUE(HasFlag("-w"));
+}
+
+// Check getClangStripPluginsAdjuster strips plugin related args.
+TEST(ClangToolTest, StripPluginsAdjuster) {
+  FixedCompilationDatabase Compilations(
+      "/", {"-Xclang", "-add-plugin", "-Xclang", "random-plugin"});
+
+  ClangTool Tool(Compilations, std::vector<std::string>(1, "/a.cc"));
+  Tool.mapVirtualFile("/a.cc", "void a() {}");
+
+  std::unique_ptr<FrontendActionFactory> Action(
+      newFrontendActionFactory<SyntaxOnlyAction>());
+
+  CommandLineArguments FinalArgs;
+  ArgumentsAdjuster CheckFlagsAdjuster =
+      [&FinalArgs](const CommandLineArguments &Args, StringRef /*unused*/) {
+        FinalArgs = Args;
+        return Args;
+      };
+  Tool.clearArgumentsAdjusters();
+  Tool.appendArgumentsAdjuster(getStripPluginsAdjuster());
+  Tool.appendArgumentsAdjuster(CheckFlagsAdjuster);
+  Tool.run(Action.get());
+
+  auto HasFlag = [&FinalArgs](const std::string &Flag) {
+    return llvm::find(FinalArgs, Flag) != FinalArgs.end();
+  };
+  EXPECT_FALSE(HasFlag("-Xclang"));
+  EXPECT_FALSE(HasFlag("-add-plugin"));
+  EXPECT_FALSE(HasFlag("-random-plugin"));
 }
 
 namespace {

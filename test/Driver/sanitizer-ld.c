@@ -153,7 +153,8 @@
 //
 // CHECK-ASAN-ANDROID-STATICLIBASAN: "{{(.*[^.0-9A-Z_a-z])?}}ld{{(.exe)?}}"
 // CHECK-ASAN-ANDROID-STATICLIBASAN: libclang_rt.asan-arm-android.a"
-// CHECK-ASAN-ANDROID-STATICLIBASAN: "-lpthread"
+// CHECK-ASAN-ANDROID-STATICLIBASAN-NOT: "-lpthread"
+// CHECK-ASAN-ANDROID-STATICLIBASAN-NOT: "-lrt"
 
 // RUN: %clang -no-canonical-prefixes %s -### -o %t.o 2>&1 \
 // RUN:     -target arm-linux-androideabi -fuse-ld=ld -fsanitize=undefined \
@@ -175,7 +176,8 @@
 //
 // CHECK-UBSAN-ANDROID-STATICLIBASAN: "{{(.*[^.0-9A-Z_a-z])?}}ld{{(.exe)?}}"
 // CHECK-UBSAN-ANDROID-STATICLIBASAN: libclang_rt.ubsan_standalone-arm-android.a"
-// CHECK-UBSAN-ANDROID-STATICLIBASAN: "-lpthread"
+// CHECK-UBSAN-ANDROID-STATICLIBASAN-NOT: "-lpthread"
+// CHECK-UBSAN-ANDROID-STATICLIBASAN-NOT: "-lrt"
 
 //
 // RUN: %clang -no-canonical-prefixes %s -### -o %t.o 2>&1 \
@@ -257,6 +259,11 @@
 // CHECK-MSAN-LINUX-CXX: "-ldl"
 
 // RUN: %clang -fsanitize=undefined %s -### -o %t.o 2>&1 \
+// RUN:     -target i386-unknown-linux -fuse-ld=ld \
+// RUN:     --sysroot=%S/Inputs/basic_linux_tree \
+// RUN:   | FileCheck --check-prefix=CHECK-UBSAN-LINUX %s
+
+// RUN: %clang -fsanitize=float-divide-by-zero %s -### -o %t.o 2>&1 \
 // RUN:     -target i386-unknown-linux -fuse-ld=ld \
 // RUN:     --sysroot=%S/Inputs/basic_linux_tree \
 // RUN:   | FileCheck --check-prefix=CHECK-UBSAN-LINUX %s
@@ -573,6 +580,9 @@
 // RUN: %clang -fsanitize=shadow-call-stack %s -### -o %t.o 2>&1 \
 // RUN:     -target arm64-unknown-ios -fuse-ld=ld \
 // RUN:   | FileCheck --check-prefix=CHECK-SHADOWCALLSTACK-LINUX-AARCH64-X18 %s
+// RUN: %clang -fsanitize=shadow-call-stack %s -### -o %t.o 2>&1 \
+// RUN:     -target aarch64-unknown-linux-android -fuse-ld=ld \
+// RUN:   | FileCheck --check-prefix=CHECK-SHADOWCALLSTACK-LINUX-AARCH64-X18 %s
 // CHECK-SHADOWCALLSTACK-LINUX-AARCH64-X18-NOT: error:
 
 // RUN: %clang -fsanitize=shadow-call-stack %s -### -o %t.o 2>&1 \
@@ -583,7 +593,7 @@
 // RUN: %clang -fsanitize=shadow-call-stack %s -### -o %t.o 2>&1 \
 // RUN:     -fsanitize=safe-stack -target x86_64-unknown-linux -fuse-ld=ld \
 // RUN:   | FileCheck --check-prefix=CHECK-SHADOWCALLSTACK-SAFESTACK %s
-// CHECK-SHADOWCALLSTACK-SAFESTACK: error: invalid argument '-fsanitize=shadow-call-stack' not allowed with '-fsanitize=safe-stack'
+// CHECK-SHADOWCALLSTACK-SAFESTACK-NOT: error:
 
 // RUN: %clang -fsanitize=cfi -fsanitize-stats %s -### -o %t.o 2>&1 \
 // RUN:     -target x86_64-unknown-linux -fuse-ld=ld \
@@ -668,15 +678,12 @@
 // CHECK-AUBSAN-PS4: "{{.*}}ld{{(.gold)?(.exe)?}}"
 // CHECK-AUBSAN-PS4: -lSceDbgAddressSanitizer_stub_weak
 
-// RUN: %clang -fsanitize=efficiency-cache-frag %s -### -o %t.o 2>&1 \
-// RUN:     -target x86_64-unknown-linux -fuse-ld=ld \
-// RUN:   | FileCheck --check-prefix=CHECK-ESAN-LINUX %s
-// RUN: %clang -fsanitize=efficiency-working-set %s -### -o %t.o 2>&1 \
-// RUN:     -target x86_64-unknown-linux -fuse-ld=ld \
-// RUN:   | FileCheck --check-prefix=CHECK-ESAN-LINUX %s
-//
-// CHECK-ESAN-LINUX: "{{(.*[^-.0-9A-Z_a-z])?}}ld{{(.exe)?}}"
-// CHECK-ESAN-LINUX: libclang_rt.esan-x86_64.a
+// RUN: %clang -fsanitize=address,undefined %s -### -o %t.o 2>&1 \
+// RUN:     -target x86_64-scei-ps4 -fuse-ld=ld \
+// RUN:     -shared \
+// RUN:     -nostdlib \
+// RUN:   | FileCheck --check-prefix=CHECK-NOLIB-PS4 %s
+// CHECK-NOLIB-PS4-NOT: SceDbgAddressSanitizer_stub_weak
 
 // RUN: %clang -fsanitize=scudo %s -### -o %t.o 2>&1 \
 // RUN:     -target i386-unknown-linux -fuse-ld=ld \
@@ -688,6 +695,15 @@
 // CHECK-SCUDO-LINUX-NOT: "-lstdc++"
 // CHECK-SCUDO-LINUX: "-lpthread"
 // CHECK-SCUDO-LINUX: "-ldl"
+
+// RUN: %clang -fsanitize=scudo -fsanitize-minimal-runtime %s -### -o %t.o 2>&1 \
+// RUN:     -target i386-unknown-linux -fuse-ld=ld \
+// RUN:     --sysroot=%S/Inputs/basic_linux_tree \
+// RUN:   | FileCheck --check-prefix=CHECK-SCUDO-MINIMAL-LINUX %s
+// CHECK-SCUDO-MINIMAL-LINUX: "{{.*}}ld{{(.exe)?}}"
+// CHECK-SCUDO-MINIMAL-LINUX: "-pie"
+// CHECK-SCUDO-MINIMAL-LINUX: "--whole-archive" "{{.*}}libclang_rt.scudo_minimal-i386.a" "--no-whole-archive"
+// CHECK-SCUDO-MINIMAL-LINUX: "-lpthread"
 
 // RUN: %clang -no-canonical-prefixes %s -### -o %t.so -shared 2>&1 \
 // RUN:     -target i386-unknown-linux -fuse-ld=ld -fsanitize=scudo -shared-libsan \
@@ -726,7 +742,8 @@
 // CHECK-SCUDO-ANDROID-STATIC: "-pie"
 // CHECK-SCUDO-ANDROID-STATIC: "--whole-archive" "{{.*}}libclang_rt.scudo-arm-android.a" "--no-whole-archive"
 // CHECK-SCUDO-ANDROID-STATIC-NOT: "-lstdc++"
-// CHECK-SCUDO-ANDROID-STATIC: "-lpthread"
+// CHECK-SCUDO-ANDROID-STATIC-NOT: "-lpthread"
+// CHECK-SCUDO-ANDROID-STATIC-NOT: "-lrt"
 
 // RUN: %clang -no-canonical-prefixes %s -### -o %t.o 2>&1 \
 // RUN:     -target x86_64-unknown-linux -fuse-ld=ld -fsanitize=hwaddress \

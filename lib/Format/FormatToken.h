@@ -1,9 +1,8 @@
 //===--- FormatToken.h - Format C++ code ------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -61,15 +60,18 @@ namespace format {
   TYPE(JsExponentiationEqual)                                                  \
   TYPE(JsFatArrow)                                                             \
   TYPE(JsNonNullAssertion)                                                     \
+  TYPE(JsPrivateIdentifier)                                                    \
   TYPE(JsTypeColon)                                                            \
   TYPE(JsTypeOperator)                                                         \
   TYPE(JsTypeOptionalQuestion)                                                 \
   TYPE(LambdaArrow)                                                            \
+  TYPE(LambdaLBrace)                                                           \
   TYPE(LambdaLSquare)                                                          \
   TYPE(LeadingJavaAnnotation)                                                  \
   TYPE(LineComment)                                                            \
   TYPE(MacroBlockBegin)                                                        \
   TYPE(MacroBlockEnd)                                                          \
+  TYPE(NamespaceMacro)                                                         \
   TYPE(ObjCBlockLBrace)                                                        \
   TYPE(ObjCBlockLParen)                                                        \
   TYPE(ObjCDecl)                                                               \
@@ -86,6 +88,7 @@ namespace format {
   TYPE(RegexLiteral)                                                           \
   TYPE(SelectorName)                                                           \
   TYPE(StartOfName)                                                            \
+  TYPE(StatementMacro)                                                         \
   TYPE(StructuredBindingLSquare)                                               \
   TYPE(TemplateCloser)                                                         \
   TYPE(TemplateOpener)                                                         \
@@ -94,7 +97,10 @@ namespace format {
   TYPE(TrailingAnnotation)                                                     \
   TYPE(TrailingReturnArrow)                                                    \
   TYPE(TrailingUnaryOperator)                                                  \
+  TYPE(TypenameMacro)                                                          \
   TYPE(UnaryOperator)                                                          \
+  TYPE(CSharpStringLiteral)                                                    \
+  TYPE(CSharpNullCoalescing)                                                   \
   TYPE(Unknown)
 
 enum TokenType {
@@ -188,10 +194,6 @@ struct FormatToken {
   bool ClosesTemplateDeclaration = false;
 
   /// Number of parameters, if this is "(", "[" or "<".
-  ///
-  /// This is initialized to 1 as we don't need to distinguish functions with
-  /// 0 parameters from functions with 1 parameter. Thus, we can simply count
-  /// the number of commas.
   unsigned ParameterCount = 0;
 
   /// Number of parameters that are nested blocks,
@@ -243,9 +245,15 @@ struct FormatToken {
   /// e.g. because several of them are block-type.
   unsigned LongestObjCSelectorName = 0;
 
-  /// How many parts ObjC selector have (i.e. how many parameters method
-  /// has).
+  /// If this is the first ObjC selector name in an ObjC method
+  /// definition or call, this contains the number of parts that the whole
+  /// selector consist of.
   unsigned ObjCSelectorNameParts = 0;
+
+  /// The 0-based index of the parameter/argument. For ObjC it is set
+  /// for the selector name token.
+  /// For now calculated only for ObjC.
+  unsigned ParameterIndex = 0;
 
   /// Stores the number of required fake parentheses and the
   /// corresponding operator precedence.
@@ -262,7 +270,7 @@ struct FormatToken {
   /// \c true if this token ends a binary expression.
   bool EndsBinaryExpression = false;
 
-  /// Is this is an operator (or "."/"->") in a sequence of operators
+  /// If this is an operator (or "."/"->") in a sequence of operators
   /// with the same precedence, contains the 0-based operator index.
   unsigned OperatorIndex = 0;
 
@@ -318,6 +326,14 @@ struct FormatToken {
     return is(K1) || isOneOf(K2, Ks...);
   }
   template <typename T> bool isNot(T Kind) const { return !is(Kind); }
+
+  bool closesScopeAfterBlock() const {
+    if (BlockKind == BK_Block)
+      return true;
+    if (closesScope())
+      return Previous->closesScopeAfterBlock();
+    return false;
+  }
 
   /// \c true if this token starts a sequence with the given tokens in order,
   /// following the ``Next`` pointers, ignoring comments.
@@ -479,8 +495,7 @@ struct FormatToken {
   bool opensBlockOrBlockTypeList(const FormatStyle &Style) const {
     if (is(TT_TemplateString) && opensScope())
       return true;
-    return is(TT_ArrayInitializerLSquare) ||
-           is(TT_ProtoExtensionLSquare) ||
+    return is(TT_ArrayInitializerLSquare) || is(TT_ProtoExtensionLSquare) ||
            (is(tok::l_brace) &&
             (BlockKind == BK_Block || is(TT_DictLiteral) ||
              (!Style.Cpp11BracedListStyle && NestingLevel == 0))) ||
@@ -514,11 +529,13 @@ struct FormatToken {
     const FormatToken *NamespaceTok = this;
     if (is(tok::comment))
       NamespaceTok = NamespaceTok->getNextNonComment();
-    // Detect "(inline)? namespace" in the beginning of a line.
-    if (NamespaceTok && NamespaceTok->is(tok::kw_inline))
+    // Detect "(inline|export)? namespace" in the beginning of a line.
+    if (NamespaceTok && NamespaceTok->isOneOf(tok::kw_inline, tok::kw_export))
       NamespaceTok = NamespaceTok->getNextNonComment();
-    return NamespaceTok && NamespaceTok->is(tok::kw_namespace) ? NamespaceTok
-                                                               : nullptr;
+    return NamespaceTok &&
+                   NamespaceTok->isOneOf(tok::kw_namespace, TT_NamespaceMacro)
+               ? NamespaceTok
+               : nullptr;
   }
 
 private:
@@ -588,6 +605,8 @@ public:
   /// Notifies the \c Role that a comma was found.
   virtual void CommaFound(const FormatToken *Token) {}
 
+  virtual const FormatToken *lastComma() { return nullptr; }
+
 protected:
   const FormatStyle &Style;
 };
@@ -608,6 +627,12 @@ public:
   /// Adds \p Token as the next comma to the \c CommaSeparated list.
   void CommaFound(const FormatToken *Token) override {
     Commas.push_back(Token);
+  }
+
+  const FormatToken *lastComma() override {
+    if (Commas.empty())
+      return nullptr;
+    return Commas.back();
   }
 
 private:
@@ -666,6 +691,7 @@ struct AdditionalKeywords {
     kw_function = &IdentTable.get("function");
     kw_get = &IdentTable.get("get");
     kw_import = &IdentTable.get("import");
+    kw_infer = &IdentTable.get("infer");
     kw_is = &IdentTable.get("is");
     kw_let = &IdentTable.get("let");
     kw_module = &IdentTable.get("module");
@@ -704,10 +730,52 @@ struct AdditionalKeywords {
     kw_slots = &IdentTable.get("slots");
     kw_qslots = &IdentTable.get("Q_SLOTS");
 
-    // Keep this at the end of the constructor to make sure everything here is
+    // C# keywords
+    kw_dollar = &IdentTable.get("dollar");
+    kw_base = &IdentTable.get("base");
+    kw_byte = &IdentTable.get("byte");
+    kw_checked = &IdentTable.get("checked");
+    kw_decimal = &IdentTable.get("decimal");
+    kw_delegate = &IdentTable.get("delegate");
+    kw_event = &IdentTable.get("event");
+    kw_fixed = &IdentTable.get("fixed");
+    kw_foreach = &IdentTable.get("foreach");
+    kw_implicit = &IdentTable.get("implicit");
+    kw_internal = &IdentTable.get("internal");
+    kw_lock = &IdentTable.get("lock");
+    kw_null = &IdentTable.get("null");
+    kw_object = &IdentTable.get("object");
+    kw_out = &IdentTable.get("out");
+    kw_params = &IdentTable.get("params");
+    kw_ref = &IdentTable.get("ref");
+    kw_string = &IdentTable.get("string");
+    kw_stackalloc = &IdentTable.get("stackalloc");
+    kw_sbyte = &IdentTable.get("sbyte");
+    kw_sealed = &IdentTable.get("sealed");
+    kw_uint = &IdentTable.get("uint");
+    kw_ulong = &IdentTable.get("ulong");
+    kw_unchecked = &IdentTable.get("unchecked");
+    kw_unsafe = &IdentTable.get("unsafe");
+    kw_ushort = &IdentTable.get("ushort");
+
+    // Keep this at the end of the constructor to make sure everything here
+    // is
     // already initialized.
     JsExtraKeywords = std::unordered_set<IdentifierInfo *>(
         {kw_as, kw_async, kw_await, kw_declare, kw_finally, kw_from,
+         kw_function, kw_get, kw_import, kw_is, kw_let, kw_module, kw_readonly,
+         kw_set, kw_type, kw_typeof, kw_var, kw_yield,
+         // Keywords from the Java section.
+         kw_abstract, kw_extends, kw_implements, kw_instanceof, kw_interface});
+
+    CSharpExtraKeywords = std::unordered_set<IdentifierInfo *>(
+        {kw_base, kw_byte, kw_checked, kw_decimal, kw_delegate, kw_event,
+         kw_fixed, kw_foreach, kw_implicit, kw_in, kw_interface, kw_internal,
+         kw_is, kw_lock, kw_null, kw_object, kw_out, kw_override, kw_params,
+         kw_readonly, kw_ref, kw_string, kw_stackalloc, kw_sbyte, kw_sealed,
+         kw_uint, kw_ulong, kw_unchecked, kw_unsafe, kw_ushort,
+         // Keywords from the JavaScript section.
+         kw_as, kw_async, kw_await, kw_declare, kw_finally, kw_from,
          kw_function, kw_get, kw_import, kw_is, kw_let, kw_module, kw_readonly,
          kw_set, kw_type, kw_typeof, kw_var, kw_yield,
          // Keywords from the Java section.
@@ -737,6 +805,7 @@ struct AdditionalKeywords {
   IdentifierInfo *kw_function;
   IdentifierInfo *kw_get;
   IdentifierInfo *kw_import;
+  IdentifierInfo *kw_infer;
   IdentifierInfo *kw_is;
   IdentifierInfo *kw_let;
   IdentifierInfo *kw_module;
@@ -776,6 +845,37 @@ struct AdditionalKeywords {
   IdentifierInfo *kw_slots;
   IdentifierInfo *kw_qslots;
 
+  // C# keywords
+  IdentifierInfo *kw_dollar;
+  IdentifierInfo *kw_base;
+  IdentifierInfo *kw_byte;
+  IdentifierInfo *kw_checked;
+  IdentifierInfo *kw_decimal;
+  IdentifierInfo *kw_delegate;
+  IdentifierInfo *kw_event;
+  IdentifierInfo *kw_fixed;
+  IdentifierInfo *kw_foreach;
+  IdentifierInfo *kw_implicit;
+  IdentifierInfo *kw_internal;
+
+  IdentifierInfo *kw_lock;
+  IdentifierInfo *kw_null;
+  IdentifierInfo *kw_object;
+  IdentifierInfo *kw_out;
+
+  IdentifierInfo *kw_params;
+
+  IdentifierInfo *kw_ref;
+  IdentifierInfo *kw_string;
+  IdentifierInfo *kw_stackalloc;
+  IdentifierInfo *kw_sbyte;
+  IdentifierInfo *kw_sealed;
+  IdentifierInfo *kw_uint;
+  IdentifierInfo *kw_ulong;
+  IdentifierInfo *kw_unchecked;
+  IdentifierInfo *kw_unsafe;
+  IdentifierInfo *kw_ushort;
+
   /// Returns \c true if \p Tok is a true JavaScript identifier, returns
   /// \c false if it is a keyword or a pseudo keyword.
   bool IsJavaScriptIdentifier(const FormatToken &Tok) const {
@@ -784,9 +884,68 @@ struct AdditionalKeywords {
                JsExtraKeywords.end();
   }
 
+  /// Returns \c true if \p Tok is a C# keyword, returns
+  /// \c false if it is a anything else.
+  bool isCSharpKeyword(const FormatToken &Tok) const {
+    switch (Tok.Tok.getKind()) {
+    case tok::kw_bool:
+    case tok::kw_break:
+    case tok::kw_case:
+    case tok::kw_catch:
+    case tok::kw_char:
+    case tok::kw_class:
+    case tok::kw_const:
+    case tok::kw_continue:
+    case tok::kw_default:
+    case tok::kw_do:
+    case tok::kw_double:
+    case tok::kw_else:
+    case tok::kw_enum:
+    case tok::kw_explicit:
+    case tok::kw_extern:
+    case tok::kw_false:
+    case tok::kw_float:
+    case tok::kw_for:
+    case tok::kw_goto:
+    case tok::kw_if:
+    case tok::kw_int:
+    case tok::kw_long:
+    case tok::kw_namespace:
+    case tok::kw_new:
+    case tok::kw_operator:
+    case tok::kw_private:
+    case tok::kw_protected:
+    case tok::kw_public:
+    case tok::kw_return:
+    case tok::kw_short:
+    case tok::kw_sizeof:
+    case tok::kw_static:
+    case tok::kw_struct:
+    case tok::kw_switch:
+    case tok::kw_this:
+    case tok::kw_throw:
+    case tok::kw_true:
+    case tok::kw_try:
+    case tok::kw_typeof:
+    case tok::kw_using:
+    case tok::kw_virtual:
+    case tok::kw_void:
+    case tok::kw_volatile:
+    case tok::kw_while:
+      return true;
+    default:
+      return Tok.is(tok::identifier) &&
+             CSharpExtraKeywords.find(Tok.Tok.getIdentifierInfo()) ==
+                 CSharpExtraKeywords.end();
+    }
+  }
+
 private:
   /// The JavaScript keywords beyond the C++ keyword set.
   std::unordered_set<IdentifierInfo *> JsExtraKeywords;
+
+  /// The C# keywords beyond the C++ keyword set
+  std::unordered_set<IdentifierInfo *> CSharpExtraKeywords;
 };
 
 } // namespace format

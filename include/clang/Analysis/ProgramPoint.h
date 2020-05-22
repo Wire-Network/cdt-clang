@@ -1,9 +1,8 @@
 //==- ProgramPoint.h - Program Points for Path-Sensitive Analysis --*- C++ -*-//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -33,7 +32,7 @@ namespace clang {
 class AnalysisDeclContext;
 class FunctionDecl;
 class LocationContext;
-  
+
 /// ProgramPoints can be "tagged" as representing points specific to a given
 /// analysis entity.  Tags are abstract annotations, with an associated
 /// description and potentially other information.
@@ -41,14 +40,13 @@ class ProgramPointTag {
 public:
   ProgramPointTag(void *tagKind = nullptr) : TagKind(tagKind) {}
   virtual ~ProgramPointTag();
-  virtual StringRef getTagDescription() const = 0;    
+  virtual StringRef getTagDescription() const = 0;
 
-protected:
   /// Used to implement 'isKind' in subclasses.
-  const void *getTagKind() { return TagKind; }
-  
+  const void *getTagKind() const { return TagKind; }
+
 private:
-  const void *TagKind;
+  const void *const TagKind;
 };
 
 class SimpleProgramPointTag : public ProgramPointTag {
@@ -80,6 +78,7 @@ public:
               CallEnterKind,
               CallExitBeginKind,
               CallExitEndKind,
+              FunctionExitKind,
               PreImplicitCallKind,
               PostImplicitCallKind,
               MinImplicitCallKind = PreImplicitCallKind,
@@ -111,7 +110,7 @@ protected:
         assert(getLocationContext() == l);
         assert(getData1() == P);
       }
-        
+
   ProgramPoint(const void *P1,
                const void *P2,
                Kind k,
@@ -181,6 +180,10 @@ public:
     return L.getPointer();
   }
 
+  const StackFrameContext *getStackFrame() const {
+    return getLocationContext()->getStackFrame();
+  }
+
   // For use with DenseMap.  This hash is probably slow.
   unsigned getHashValue() const {
     llvm::FoldingSetNodeID ID;
@@ -210,6 +213,10 @@ public:
     ID.AddPointer(getTag());
   }
 
+  void printJson(llvm::raw_ostream &Out, const char *NL = "\n") const;
+
+  LLVM_DUMP_METHOD void dump() const;
+
   static ProgramPoint getProgramPoint(const Stmt *S, ProgramPoint::Kind K,
                                       const LocationContext *LC,
                                       const ProgramPointTag *tag);
@@ -219,7 +226,7 @@ class BlockEntrance : public ProgramPoint {
 public:
   BlockEntrance(const CFGBlock *B, const LocationContext *L,
                 const ProgramPointTag *tag = nullptr)
-    : ProgramPoint(B, BlockEntranceKind, L, tag) {    
+    : ProgramPoint(B, BlockEntranceKind, L, tag) {
     assert(B && "BlockEntrance requires non-null block");
   }
 
@@ -231,7 +238,7 @@ public:
     const CFGBlock *B = getBlock();
     return B->empty() ? Optional<CFGElement>() : B->front();
   }
-  
+
 private:
   friend class ProgramPoint;
   BlockEntrance() = default;
@@ -250,7 +257,7 @@ public:
   }
 
   const Stmt *getTerminator() const {
-    return getBlock()->getTerminator();
+    return getBlock()->getTerminatorStmt();
   }
 
 private:
@@ -325,6 +332,29 @@ private:
   }
 };
 
+class FunctionExitPoint : public ProgramPoint {
+public:
+  explicit FunctionExitPoint(const ReturnStmt *S,
+                             const LocationContext *LC,
+                             const ProgramPointTag *tag = nullptr)
+      : ProgramPoint(S, FunctionExitKind, LC, tag) {}
+
+  const CFGBlock *getBlock() const {
+    return &getLocationContext()->getCFG()->getExit();
+  }
+
+  const ReturnStmt *getStmt() const {
+    return reinterpret_cast<const ReturnStmt *>(getData1());
+  }
+
+private:
+  friend class ProgramPoint;
+  FunctionExitPoint() = default;
+  static bool isKind(const ProgramPoint &Location) {
+    return Location.getKind() == FunctionExitKind;
+  }
+};
+
 // PostCondition represents the post program point of a branch condition.
 class PostCondition : public PostStmt {
 public:
@@ -346,7 +376,7 @@ protected:
   LocationCheck(const Stmt *S, const LocationContext *L,
                 ProgramPoint::Kind K, const ProgramPointTag *tag)
     : StmtPoint(S, nullptr, K, L, tag) {}
-    
+
 private:
   friend class ProgramPoint;
   static bool isKind(const ProgramPoint &location) {
@@ -354,13 +384,13 @@ private:
     return k == PreLoadKind || k == PreStoreKind;
   }
 };
-  
+
 class PreLoad : public LocationCheck {
 public:
   PreLoad(const Stmt *S, const LocationContext *L,
           const ProgramPointTag *tag = nullptr)
     : LocationCheck(S, L, PreLoadKind, tag) {}
-  
+
 private:
   friend class ProgramPoint;
   PreLoad() = default;
@@ -374,7 +404,7 @@ public:
   PreStore(const Stmt *S, const LocationContext *L,
            const ProgramPointTag *tag = nullptr)
   : LocationCheck(S, L, PreStoreKind, tag) {}
-  
+
 private:
   friend class ProgramPoint;
   PreStore() = default;
@@ -401,7 +431,7 @@ private:
 class PostStore : public PostStmt {
 public:
   /// Construct the post store point.
-  /// \param Loc can be used to store the information about the location 
+  /// \param Loc can be used to store the information about the location
   /// used in the form it was uttered in the code.
   PostStore(const Stmt *S, const LocationContext *L, const void *Loc,
             const ProgramPointTag *tag = nullptr)
@@ -475,7 +505,7 @@ public:
   BlockEdge(const CFGBlock *B1, const CFGBlock *B2, const LocationContext *L)
     : ProgramPoint(B1, B2, BlockEdgeKind, L) {
     assert(B1 && "BlockEdge: source block must be non-null");
-    assert(B2 && "BlockEdge: destination block must be non-null");    
+    assert(B2 && "BlockEdge: destination block must be non-null");
   }
 
   const CFGBlock *getSrc() const {
@@ -599,7 +629,7 @@ private:
 /// CallEnter uses the caller's location context.
 class CallEnter : public ProgramPoint {
 public:
-  CallEnter(const Stmt *stmt, const StackFrameContext *calleeCtx, 
+  CallEnter(const Stmt *stmt, const StackFrameContext *calleeCtx,
             const LocationContext *callerCtx)
     : ProgramPoint(stmt, calleeCtx, CallEnterKind, callerCtx, nullptr) {}
 
@@ -745,9 +775,6 @@ static bool isEqual(const clang::ProgramPoint &L,
 }
 
 };
-  
-template <>
-struct isPodLike<clang::ProgramPoint> { static const bool value = true; };
 
 } // end namespace llvm
 

@@ -1,9 +1,8 @@
 //===- Lookup.h - Classes for name lookup -----------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -50,11 +49,11 @@ public:
     /// No entity found met the criteria.
     NotFound = 0,
 
-    /// No entity found met the criteria within the current 
-    /// instantiation,, but there were dependent base classes of the 
+    /// No entity found met the criteria within the current
+    /// instantiation,, but there were dependent base classes of the
     /// current instantiation that could not be searched.
     NotFoundInCurrentInstantiation,
-    
+
     /// Name lookup found a single declaration that met the
     /// criteria.  getFoundDecl() will return this declaration.
     Found,
@@ -173,7 +172,8 @@ public:
       : SemaPtr(Other.SemaPtr), NameInfo(Other.NameInfo),
         LookupKind(Other.LookupKind), IDNS(Other.IDNS), Redecl(Other.Redecl),
         ExternalRedecl(Other.ExternalRedecl), HideTags(Other.HideTags),
-        AllowHidden(Other.AllowHidden) {}
+        AllowHidden(Other.AllowHidden),
+        TemplateNameLookup(Other.TemplateNameLookup) {}
 
   // FIXME: Remove these deleted methods once the default build includes
   // -Wdeprecated.
@@ -194,7 +194,8 @@ public:
         HideTags(std::move(Other.HideTags)),
         Diagnose(std::move(Other.Diagnose)),
         AllowHidden(std::move(Other.AllowHidden)),
-        Shadowed(std::move(Other.Shadowed)) {
+        Shadowed(std::move(Other.Shadowed)),
+        TemplateNameLookup(std::move(Other.TemplateNameLookup)) {
     Other.Paths = nullptr;
     Other.Diagnose = false;
   }
@@ -217,6 +218,7 @@ public:
     Diagnose = std::move(Other.Diagnose);
     AllowHidden = std::move(Other.AllowHidden);
     Shadowed = std::move(Other.Shadowed);
+    TemplateNameLookup = std::move(Other.TemplateNameLookup);
     Other.Paths = nullptr;
     Other.Diagnose = false;
     return *this;
@@ -286,6 +288,15 @@ public:
   void setHideTags(bool Hide) {
     HideTags = Hide;
   }
+
+  /// Sets whether this is a template-name lookup. For template-name lookups,
+  /// injected-class-names are treated as naming a template rather than a
+  /// template specialization.
+  void setTemplateNameLookup(bool TemplateName) {
+    TemplateNameLookup = TemplateName;
+  }
+
+  bool isTemplateNameLookup() const { return TemplateNameLookup; }
 
   bool isAmbiguous() const {
     return getResultKind() == Ambiguous;
@@ -435,7 +446,7 @@ public:
   bool wasNotFoundInCurrentInstantiation() const {
     return ResultKind == NotFoundInCurrentInstantiation;
   }
-  
+
   /// Note that while no result was found in the current instantiation,
   /// there were dependent base classes that could not be searched.
   void setNotFoundInCurrentInstantiation() {
@@ -540,7 +551,7 @@ public:
   }
 
   /// Clears out any current state.
-  void clear() {
+  LLVM_ATTRIBUTE_REINITIALIZES void clear() {
     ResultKind = NotFound;
     Decls.clear();
     if (Paths) deletePaths(Paths);
@@ -610,7 +621,7 @@ public:
     LookupResult::iterator I;
     bool Changed = false;
     bool CalledDone = false;
-    
+
     Filter(LookupResult &Results) : Results(Results), I(Results.begin()) {}
 
   public:
@@ -709,7 +720,9 @@ private:
 
   // Results.
   LookupResultKind ResultKind = NotFound;
-  AmbiguityKind Ambiguity; // ill-defined unless ambiguous
+  // ill-defined unless ambiguous. Still need to be initialized it will be
+  // copied/moved.
+  AmbiguityKind Ambiguity = {};
   UnresolvedSet<8> Decls;
   CXXBasePaths *Paths = nullptr;
   CXXRecordDecl *NamingClass = nullptr;
@@ -738,6 +751,9 @@ private:
   /// declaration that we skipped. This only happens when \c LookupKind
   /// is \c LookupRedeclarationWithLinkage.
   bool Shadowed = false;
+
+  /// True if we're looking up a template-name.
+  bool TemplateNameLookup = false;
 };
 
 /// Consumes visible declarations found when searching for

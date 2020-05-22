@@ -1,9 +1,8 @@
 //== RangeConstraintManager.cpp - Manage range constraints.------*- C++ -*--==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -12,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/Basic/JsonSupport.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/APSIntType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
@@ -174,6 +174,54 @@ RangeSet RangeSet::Intersect(BasicValueFactory &BV, Factory &F,
   return newRanges;
 }
 
+// Returns a set containing the values in the receiving set, intersected with
+// the range set passed as parameter.
+RangeSet RangeSet::Intersect(BasicValueFactory &BV, Factory &F,
+                             const RangeSet &Other) const {
+  PrimRangeSet newRanges = F.getEmptySet();
+
+  for (iterator i = Other.begin(), e = Other.end(); i != e; ++i) {
+    RangeSet newPiece = Intersect(BV, F, i->From(), i->To());
+    for (iterator j = newPiece.begin(), ee = newPiece.end(); j != ee; ++j) {
+      newRanges = F.add(newRanges, *j);
+    }
+  }
+
+  return newRanges;
+}
+
+// Turn all [A, B] ranges to [-B, -A]. Ranges [MIN, B] are turned to range set
+// [MIN, MIN] U [-B, MAX], when MIN and MAX are the minimal and the maximal
+// signed values of the type.
+RangeSet RangeSet::Negate(BasicValueFactory &BV, Factory &F) const {
+  PrimRangeSet newRanges = F.getEmptySet();
+
+  for (iterator i = begin(), e = end(); i != e; ++i) {
+    const llvm::APSInt &from = i->From(), &to = i->To();
+    const llvm::APSInt &newTo = (from.isMinSignedValue() ?
+                                 BV.getMaxValue(from) :
+                                 BV.getValue(- from));
+    if (to.isMaxSignedValue() && !newRanges.isEmpty() &&
+        newRanges.begin()->From().isMinSignedValue()) {
+      assert(newRanges.begin()->To().isMinSignedValue() &&
+             "Ranges should not overlap");
+      assert(!from.isMinSignedValue() && "Ranges should not overlap");
+      const llvm::APSInt &newFrom = newRanges.begin()->From();
+      newRanges =
+        F.add(F.remove(newRanges, *newRanges.begin()), Range(newFrom, newTo));
+    } else if (!to.isMinSignedValue()) {
+      const llvm::APSInt &newFrom = BV.getValue(- to);
+      newRanges = F.add(newRanges, Range(newFrom, newTo));
+    }
+    if (from.isMinSignedValue()) {
+      newRanges = F.add(newRanges, Range(BV.getMinValue(from),
+                                         BV.getMinValue(from)));
+    }
+  }
+
+  return newRanges;
+}
+
 void RangeSet::print(raw_ostream &os) const {
   bool isFirst = true;
   os << "{ ";
@@ -199,6 +247,11 @@ public:
   // Implementation for interface from ConstraintManager.
   //===------------------------------------------------------------------===//
 
+  bool haveEqualConstraints(ProgramStateRef S1,
+                            ProgramStateRef S2) const override {
+    return S1->get<ConstraintRange>() == S2->get<ConstraintRange>();
+  }
+
   bool canReasonAbout(SVal X) const override;
 
   ConditionTruthVal checkNull(ProgramStateRef State, SymbolRef Sym) override;
@@ -209,8 +262,8 @@ public:
   ProgramStateRef removeDeadBindings(ProgramStateRef State,
                                      SymbolReaper &SymReaper) override;
 
-  void print(ProgramStateRef State, raw_ostream &Out, const char *nl,
-             const char *sep) override;
+  void printJson(raw_ostream &Out, ProgramStateRef State, const char *NL = "\n",
+                 unsigned int Space = 0, bool IsDot = false) const override;
 
   //===------------------------------------------------------------------===//
   // Implementation for interface from RangedConstraintManager.
@@ -252,6 +305,8 @@ private:
   RangeSet::Factory F;
 
   RangeSet getRange(ProgramStateRef State, SymbolRef Sym);
+  const RangeSet* getRangeForMinusSymbol(ProgramStateRef State,
+                                         SymbolRef Sym);
 
   RangeSet getSymLTRange(ProgramStateRef St, SymbolRef Sym,
                          const llvm::APSInt &Int,
@@ -268,6 +323,7 @@ private:
   RangeSet getSymGERange(ProgramStateRef St, SymbolRef Sym,
                          const llvm::APSInt &Int,
                          const llvm::APSInt &Adjustment);
+
 };
 
 } // end anonymous namespace
@@ -308,9 +364,11 @@ bool RangeConstraintManager::canReasonAbout(SVal X) const {
       if (BinaryOperator::isEqualityOp(SSE->getOpcode()) ||
           BinaryOperator::isRelationalOp(SSE->getOpcode())) {
         // We handle Loc <> Loc comparisons, but not (yet) NonLoc <> NonLoc.
+        // We've recently started producing Loc <> NonLoc comparisons (that
+        // result from casts of one of the operands between eg. intptr_t and
+        // void *), but we can't reason about them yet.
         if (Loc::isLocType(SSE->getLHS()->getType())) {
-          assert(Loc::isLocType(SSE->getRHS()->getType()));
-          return true;
+          return Loc::isLocType(SSE->getRHS()->getType());
         }
       }
     }
@@ -362,7 +420,7 @@ RangeConstraintManager::removeDeadBindings(ProgramStateRef State,
 
   for (ConstraintRangeTy::iterator I = CR.begin(), E = CR.end(); I != E; ++I) {
     SymbolRef Sym = I.getKey();
-    if (SymReaper.maybeDead(Sym)) {
+    if (SymReaper.isDead(Sym)) {
       Changed = true;
       CR = CRFactory.remove(CR, Sym);
     }
@@ -420,12 +478,25 @@ static RangeSet applyBitwiseConstraints(
 
 RangeSet RangeConstraintManager::getRange(ProgramStateRef State,
                                           SymbolRef Sym) {
-  if (ConstraintRangeTy::data_type *V = State->get<ConstraintRange>(Sym))
+  ConstraintRangeTy::data_type *V = State->get<ConstraintRange>(Sym);
+
+  // If Sym is a difference of symbols A - B, then maybe we have range set
+  // stored for B - A.
+  BasicValueFactory &BV = getBasicVals();
+  const RangeSet *R = getRangeForMinusSymbol(State, Sym);
+
+  // If we have range set stored for both A - B and B - A then calculate the
+  // effective range set by intersecting the range set for A - B and the
+  // negated range set of B - A.
+  if (V && R)
+    return V->Intersect(BV, F, R->Negate(BV, F));
+  if (V)
     return *V;
+  if (R)
+    return R->Negate(BV, F);
 
   // Lazily generate a new RangeSet representing all possible values for the
   // given symbol type.
-  BasicValueFactory &BV = getBasicVals();
   QualType T = Sym->getType();
 
   RangeSet Result(F, BV.getMinValue(T), BV.getMaxValue(T));
@@ -439,6 +510,32 @@ RangeSet RangeConstraintManager::getRange(ProgramStateRef State,
     return applyBitwiseConstraints(BV, F, Result, SIE);
 
   return Result;
+}
+
+// FIXME: Once SValBuilder supports unary minus, we should use SValBuilder to
+//        obtain the negated symbolic expression instead of constructing the
+//        symbol manually. This will allow us to support finding ranges of not
+//        only negated SymSymExpr-type expressions, but also of other, simpler
+//        expressions which we currently do not know how to negate.
+const RangeSet*
+RangeConstraintManager::getRangeForMinusSymbol(ProgramStateRef State,
+                                               SymbolRef Sym) {
+  if (const SymSymExpr *SSE = dyn_cast<SymSymExpr>(Sym)) {
+    if (SSE->getOpcode() == BO_Sub) {
+      QualType T = Sym->getType();
+      SymbolManager &SymMgr = State->getSymbolManager();
+      SymbolRef negSym = SymMgr.getSymSymExpr(SSE->getRHS(), BO_Sub,
+                                              SSE->getLHS(), T);
+      if (const RangeSet *negV = State->get<ConstraintRange>(negSym)) {
+        // Unsigned range set cannot be negated, unless it is [0, 0].
+        if ((negV->getConcreteValue() &&
+             (*negV->getConcreteValue() == 0)) ||
+            T->isSignedIntegerOrEnumerationType())
+          return negV;
+      }
+    }
+  }
+  return nullptr;
 }
 
 //===------------------------------------------------------------------------===
@@ -658,25 +755,35 @@ ProgramStateRef RangeConstraintManager::assumeSymOutsideInclusiveRange(
   return New.isEmpty() ? nullptr : State->set<ConstraintRange>(Sym, New);
 }
 
-//===------------------------------------------------------------------------===
+//===----------------------------------------------------------------------===//
 // Pretty-printing.
-//===------------------------------------------------------------------------===/
+//===----------------------------------------------------------------------===//
 
-void RangeConstraintManager::print(ProgramStateRef St, raw_ostream &Out,
-                                   const char *nl, const char *sep) {
+void RangeConstraintManager::printJson(raw_ostream &Out, ProgramStateRef State,
+                                       const char *NL, unsigned int Space,
+                                       bool IsDot) const {
+  ConstraintRangeTy Constraints = State->get<ConstraintRange>();
 
-  ConstraintRangeTy Ranges = St->get<ConstraintRange>();
-
-  if (Ranges.isEmpty()) {
-    Out << nl << sep << "Ranges are empty." << nl;
+  Indent(Out, Space, IsDot) << "\"constraints\": ";
+  if (Constraints.isEmpty()) {
+    Out << "null," << NL;
     return;
   }
 
-  Out << nl << sep << "Ranges of symbol values:";
-  for (ConstraintRangeTy::iterator I = Ranges.begin(), E = Ranges.end(); I != E;
-       ++I) {
-    Out << nl << ' ' << I.getKey() << " : ";
+  ++Space;
+  Out << '[' << NL;
+  for (ConstraintRangeTy::iterator I = Constraints.begin();
+       I != Constraints.end(); ++I) {
+    Indent(Out, Space, IsDot)
+        << "{ \"symbol\": \"" << I.getKey() << "\", \"range\": \"";
     I.getData().print(Out);
+    Out << "\" }";
+
+    if (std::next(I) != Constraints.end())
+      Out << ',';
+    Out << NL;
   }
-  Out << nl;
+
+  --Space;
+  Indent(Out, Space, IsDot) << "]," << NL;
 }

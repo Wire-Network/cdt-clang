@@ -17,6 +17,7 @@ set(LLVM_LINK_COMPONENTS
   Object
   Passes
   ProfileData
+  Remarks
   ScalarOpts
   Support
   Target
@@ -30,6 +31,10 @@ set(LLVM_LINK_COMPONENTS
 set(codegen_deps intrinsics_gen)
 if (CLANG_BUILT_STANDALONE)
   set(codegen_deps)
+endif()
+
+if (MSVC)
+  set_source_files_properties(CodeGenModule.cpp PROPERTIES COMPILE_FLAGS /bigobj)
 endif()
 
 add_clang_library(clangCodeGen
@@ -84,6 +89,7 @@ add_clang_library(clangCodeGen
   MicrosoftCXXABI.cpp
   ModuleBuilder.cpp
   ObjectFilePCHContainerOperations.cpp
+  PatternInit.cpp
   SanitizerMetadata.cpp
   SwiftCallingConv.cpp
   TargetInfo.cpp
@@ -95,7 +101,9 @@ add_clang_library(clangCodeGen
   LINK_LIBS
   clangAnalysis
   clangAST
+  clangASTMatchers
   clangBasic
   clangFrontend
   clangLex
+  clangSerialization
   )

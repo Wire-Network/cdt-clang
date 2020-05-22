@@ -1,9 +1,8 @@
 //===- BugReporter.h - Generate PathDiagnostics -----------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -23,6 +22,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymExpr.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/FoldingSet.h"
@@ -65,10 +65,15 @@ class SValBuilder;
 // Interface for individual bug reports.
 //===----------------------------------------------------------------------===//
 
+/// A mapping from diagnostic consumers to the diagnostics they should
+/// consume.
+using DiagnosticForConsumerMapTy =
+    llvm::DenseMap<PathDiagnosticConsumer *, std::unique_ptr<PathDiagnostic>>;
+
 /// This class provides an interface through which checkers can create
 /// individual bug reports.
 class BugReport : public llvm::ilist_node<BugReport> {
-public:  
+public:
   class NodeResolver {
     virtual void anchor();
 
@@ -89,14 +94,14 @@ protected:
   friend class BugReportEquivClass;
   friend class BugReporter;
 
-  BugType& BT;
+  const BugType& BT;
   const Decl *DeclWithIssue = nullptr;
   std::string ShortDescription;
   std::string Description;
   PathDiagnosticLocation Location;
   PathDiagnosticLocation UniqueingLocation;
   const Decl *UniqueingDecl;
-  
+
   const ExplodedNode *ErrorNode = nullptr;
   SmallVector<SourceRange, 4> Ranges;
   ExtraTextList ExtraText;
@@ -130,10 +135,6 @@ protected:
   /// Used for ensuring the visitors are only added once.
   llvm::FoldingSet<BugReporterVisitor> CallbacksSet;
 
-  /// Used for clients to tell if the report's configuration has changed
-  /// since the last time they checked.
-  unsigned ConfigurationChangeToken = 0;
-  
   /// When set, this flag disables all callstack pruning from a diagnostic
   /// path.  This is useful for some reports that want maximum fidelty
   /// when reporting an issue.
@@ -152,6 +153,9 @@ protected:
   /// \sa removeInvalidation
   llvm::SmallSet<InvalidationRecord, 4> Invalidations;
 
+  /// Conditions we're already tracking.
+  llvm::SmallSet<const ExplodedNode *, 4> TrackedConditions;
+
 private:
   // Used internally by BugReporter.
   Symbols &getInterestingSymbols();
@@ -162,15 +166,15 @@ private:
   void popInterestingSymbolsAndRegions();
 
 public:
-  BugReport(BugType& bt, StringRef desc, const ExplodedNode *errornode)
+  BugReport(const BugType& bt, StringRef desc, const ExplodedNode *errornode)
       : BT(bt), Description(desc), ErrorNode(errornode) {}
 
-  BugReport(BugType& bt, StringRef shortDesc, StringRef desc,
+  BugReport(const BugType& bt, StringRef shortDesc, StringRef desc,
             const ExplodedNode *errornode)
       : BT(bt), ShortDescription(shortDesc), Description(desc),
         ErrorNode(errornode) {}
 
-  BugReport(BugType &bt, StringRef desc, PathDiagnosticLocation l)
+  BugReport(const BugType &bt, StringRef desc, PathDiagnosticLocation l)
       : BT(bt), Description(desc), Location(l) {}
 
   /// Create a BugReport with a custom uniqueing location.
@@ -188,7 +192,7 @@ public:
   virtual ~BugReport();
 
   const BugType& getBugType() const { return BT; }
-  BugType& getBugType() { return BT; }
+  //BugType& getBugType() { return BT; }
 
   /// True when the report has an execution path associated with it.
   ///
@@ -218,20 +222,16 @@ public:
 
   /// Disable all path pruning when generating a PathDiagnostic.
   void disablePathPruning() { DoNotPrunePath = true; }
-  
+
   void markInteresting(SymbolRef sym);
   void markInteresting(const MemRegion *R);
   void markInteresting(SVal V);
   void markInteresting(const LocationContext *LC);
-  
+
   bool isInteresting(SymbolRef sym);
   bool isInteresting(const MemRegion *R);
   bool isInteresting(SVal V);
   bool isInteresting(const LocationContext *LC);
-
-  unsigned getConfigurationChangeToken() const {
-    return ConfigurationChangeToken;
-  }
 
   /// Returns whether or not this report should be considered valid.
   ///
@@ -253,11 +253,11 @@ public:
   void markInvalid(const void *Tag, const void *Data) {
     Invalidations.insert(std::make_pair(Tag, Data));
   }
-  
+
   /// Return the canonical declaration, be it a method or class, where
   /// this issue semantically occurred.
   const Decl *getDeclWithIssue() const;
-  
+
   /// Specifically set the Decl where an issue occurred.  This isn't necessary
   /// for BugReports that cover a path as it will be automatically inferred.
   void setDeclWithIssue(const Decl *declWithIssue) {
@@ -292,7 +292,7 @@ public:
 
   /// This allows for addition of meta data to the diagnostic.
   ///
-  /// Currently, only the HTMLDiagnosticClient knows how to display it. 
+  /// Currently, only the HTMLDiagnosticClient knows how to display it.
   void addExtraText(StringRef S) {
     ExtraText.push_back(S);
   }
@@ -312,7 +312,7 @@ public:
   PathDiagnosticLocation getUniqueingLocation() const {
     return UniqueingLocation;
   }
-  
+
   /// Get the declaration containing the uniqueing location.
   const Decl *getUniqueingDecl() const {
     return UniqueingDecl;
@@ -345,9 +345,19 @@ public:
   /// registerVarDeclsLastStore().
   void addVisitor(std::unique_ptr<BugReporterVisitor> visitor);
 
+  /// Remove all visitors attached to this bug report.
+  void clearVisitors();
+
   /// Iterators through the custom diagnostic visitors.
   visitor_iterator visitor_begin() { return Callbacks.begin(); }
   visitor_iterator visitor_end() { return Callbacks.end(); }
+
+  /// Notes that the condition of the CFGBlock associated with \p Cond is
+  /// being tracked.
+  /// \returns false if the condition is already being tracked.
+  bool addTrackedCondition(const ExplodedNode *Cond) {
+    return TrackedConditions.insert(Cond).second;
+  }
 
   /// Profile to identify equivalent bug reports for error report coalescing.
   /// Reports are uniqued to ensure that we do not emit multiple diagnostics
@@ -406,6 +416,8 @@ public:
 /// BugReporter is a utility class for generating PathDiagnostics for analysis.
 /// It collects the BugReports and BugTypes and knows how to generate
 /// and flush the corresponding diagnostics.
+///
+/// The base class is used for generating path-insensitive
 class BugReporter {
 public:
   enum Kind { BaseBRKind, GRBugReporterKind };
@@ -422,11 +434,11 @@ private:
   /// Generate and flush the diagnostics for the given bug report.
   void FlushReport(BugReportEquivClass& EQ);
 
-  /// Generate and flush the diagnostics for the given bug report
-  /// and PathDiagnosticConsumer.
-  void FlushReport(BugReport *exampleReport,
-                   PathDiagnosticConsumer &PD,
-                   ArrayRef<BugReport*> BugReports);
+  /// Generate the diagnostics for the given bug report.
+  std::unique_ptr<DiagnosticForConsumerMapTy>
+  generateDiagnosticForConsumerMap(BugReport *exampleReport,
+                                   ArrayRef<PathDiagnosticConsumer *> consumers,
+                                   ArrayRef<BugReport *> bugReports);
 
   /// The set of bug reports tracked by the BugReporter.
   llvm::FoldingSet<BugReportEquivClass> EQClasses;
@@ -472,13 +484,13 @@ public:
 
   AnalyzerOptions &getAnalyzerOptions() { return D.getAnalyzerOptions(); }
 
-  virtual bool generatePathDiagnostic(PathDiagnostic& pathDiagnostic,
-                                      PathDiagnosticConsumer &PC,
-                                      ArrayRef<BugReport *> &bugReports) {
-    return true;
+  virtual std::unique_ptr<DiagnosticForConsumerMapTy>
+  generatePathDiagnostics(ArrayRef<PathDiagnosticConsumer *> consumers,
+                          ArrayRef<BugReport *> &bugReports) {
+    return {};
   }
 
-  void Register(BugType *BT);
+  void Register(const BugType *BT);
 
   /// Add the given report to the set of reports tracked by BugReporter.
   ///
@@ -506,7 +518,7 @@ private:
                              StringRef category);
 };
 
-// FIXME: Get rid of GRBugReporter.  It's the wrong abstraction.
+/// GRBugReporter is used for generating path-sensitive reports.
 class GRBugReporter : public BugReporter {
   ExprEngine& Eng;
 
@@ -516,10 +528,6 @@ public:
 
   ~GRBugReporter() override;
 
-  /// getEngine - Return the analysis engine used to analyze a given
-  ///  function or method.
-  ExprEngine &getEngine() { return Eng; }
-
   /// getGraph - Get the exploded graph created by the analysis engine
   ///  for the analyzed method or function.
   ExplodedGraph &getGraph();
@@ -528,16 +536,14 @@ public:
   ///  engine.
   ProgramStateManager &getStateManager();
 
-  /// Generates a path corresponding to one of the given bug reports.
+  /// \p bugReports A set of bug reports within a *single* equivalence class
   ///
-  /// Which report is used for path generation is not specified. The
-  /// bug reporter will try to pick the shortest path, but this is not
-  /// guaranteed.
-  ///
-  /// \return True if the report was valid and a path was generated,
-  ///         false if the reports should be considered invalid.
-  bool generatePathDiagnostic(PathDiagnostic &PD, PathDiagnosticConsumer &PC,
-                              ArrayRef<BugReport*> &bugReports) override;
+  /// \return A mapping from consumers to the corresponding diagnostics.
+  /// Iterates through the bug reports within a single equivalence class,
+  /// stops at a first non-invalidated report.
+  std::unique_ptr<DiagnosticForConsumerMapTy>
+  generatePathDiagnostics(ArrayRef<PathDiagnosticConsumer *> consumers,
+                          ArrayRef<BugReport *> &bugReports) override;
 
   /// classof - Used by isa<>, cast<>, and dyn_cast<>.
   static bool classof(const BugReporter* R) {
@@ -545,13 +551,27 @@ public:
   }
 };
 
+
+class NodeMapClosure : public BugReport::NodeResolver {
+  InterExplodedGraphMap &M;
+
+public:
+  NodeMapClosure(InterExplodedGraphMap &m) : M(m) {}
+
+  const ExplodedNode *getOriginalNode(const ExplodedNode *N) override {
+    return M.lookup(N);
+  }
+};
+
 class BugReporterContext {
   GRBugReporter &BR;
+  NodeMapClosure NMC;
 
   virtual void anchor();
 
 public:
-  BugReporterContext(GRBugReporter& br) : BR(br) {}
+  BugReporterContext(GRBugReporter &br, InterExplodedGraphMap &Backmap)
+      : BR(br), NMC(Backmap) {}
 
   virtual ~BugReporterContext() = default;
 
@@ -575,7 +595,68 @@ public:
     return BR.getSourceManager();
   }
 
-  virtual BugReport::NodeResolver& getNodeResolver() = 0;
+  AnalyzerOptions &getAnalyzerOptions() {
+    return BR.getAnalyzerOptions();
+  }
+
+  NodeMapClosure& getNodeResolver() { return NMC; }
+};
+
+
+/// The tag upon which the TagVisitor reacts. Add these in order to display
+/// additional PathDiagnosticEventPieces along the path.
+class NoteTag : public ProgramPointTag {
+public:
+  using Callback =
+      std::function<std::string(BugReporterContext &, BugReport &)>;
+
+private:
+  static int Kind;
+
+  const Callback Cb;
+  const bool IsPrunable;
+
+  NoteTag(Callback &&Cb, bool IsPrunable)
+      : ProgramPointTag(&Kind), Cb(std::move(Cb)), IsPrunable(IsPrunable) {}
+
+public:
+  static bool classof(const ProgramPointTag *T) {
+    return T->getTagKind() == &Kind;
+  }
+
+  Optional<std::string> generateMessage(BugReporterContext &BRC,
+                                        BugReport &R) const {
+    std::string Msg = Cb(BRC, R);
+    if (Msg.empty())
+      return None;
+
+    return std::move(Msg);
+  }
+
+  StringRef getTagDescription() const override {
+    // TODO: Remember a few examples of generated messages
+    // and display them in the ExplodedGraph dump by
+    // returning them from this function.
+    return "Note Tag";
+  }
+
+  bool isPrunable() const { return IsPrunable; }
+
+  // Manage memory for NoteTag objects.
+  class Factory {
+    std::vector<std::unique_ptr<NoteTag>> Tags;
+
+  public:
+    const NoteTag *makeNoteTag(Callback &&Cb, bool IsPrunable = false) {
+      // We cannot use make_unique because we cannot access the private
+      // constructor from inside it.
+      std::unique_ptr<NoteTag> T(new NoteTag(std::move(Cb), IsPrunable));
+      Tags.push_back(std::move(T));
+      return Tags.back().get();
+    }
+  };
+
+  friend class TagVisitor;
 };
 
 } // namespace ento

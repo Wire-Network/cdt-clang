@@ -2,8 +2,8 @@
 // RUN: %clang_cc1 -triple x86_64-windows-msvc -fms-compatibility -emit-llvm -std=c++1y -O0 -o - %s -DMSABI | FileCheck --check-prefix=MSC --check-prefix=M64 %s
 // RUN: %clang_cc1 -triple i686-windows-gnu                       -emit-llvm -std=c++1y -O0 -o - %s         | FileCheck --check-prefix=GNU --check-prefix=G32 %s
 // RUN: %clang_cc1 -triple x86_64-windows-gnu                     -emit-llvm -std=c++1y -O0 -o - %s         | FileCheck --check-prefix=GNU --check-prefix=G64 %s
-// RUN: %clang_cc1 -triple i686-windows-msvc -fms-compatibility   -emit-llvm -std=c++1y -O1 -o - %s -DMSABI | FileCheck --check-prefix=MO1 %s
-// RUN: %clang_cc1 -triple i686-windows-gnu                       -emit-llvm -std=c++1y -O1 -o - %s         | FileCheck --check-prefix=GO1 %s
+// RUN: %clang_cc1 -triple i686-windows-msvc -fms-compatibility   -emit-llvm -std=c++1y -O1 -fno-experimental-new-pass-manager -o - %s -DMSABI | FileCheck --check-prefix=MO1 %s
+// RUN: %clang_cc1 -triple i686-windows-gnu                       -emit-llvm -std=c++1y -O1 -fno-experimental-new-pass-manager -o - %s         | FileCheck --check-prefix=GO1 %s
 
 // Helper structs to make templates more expressive.
 struct ImplicitInst_Imported {};
@@ -854,7 +854,7 @@ USEMV(MemVarTmpl, ImportedStaticVar<ExplicitSpec_Imported>)
 // Not importing specialization of a member variable template without explicit
 // dllimport.
 // MSC-DAG: @"??$ImportedStaticVar@UExplicitSpec_NotImported@@@MemVarTmpl@@2HB" = external dso_local constant i32
-// GNU-DAG: @_ZN10MemVarTmpl17ImportedStaticVarI24ExplicitSpec_NotImportedEE       = external dso_local constant i32
+// GNU-DAG: @_ZN10MemVarTmpl17ImportedStaticVarI24ExplicitSpec_NotImportedEE       = external constant i32
 template<> const int MemVarTmpl::ImportedStaticVar<ExplicitSpec_NotImported>;
 USEMV(MemVarTmpl, ImportedStaticVar<ExplicitSpec_NotImported>)
 
