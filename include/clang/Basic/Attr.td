@@ -1096,6 +1096,12 @@ def EosioAction : InheritableAttr {
    let Documentation = [EosioActionDocs];
 }
 
+def EosioReadOnly : InheritableAttr {
+  let Spellings = [CXX11<"eosio", "read_only">, GNU<"eosio_read_only">];
+  let Subjects = SubjectList<[CXXRecord, CXXMethod]>;
+  let Documentation = [EosioReadOnlyDocs];
+}
+
 def EosioTable : InheritableAttr {
    let Spellings = [CXX11<"eosio", "table">, GNU<"eosio_table">];
    let Args = [StringArgument<"name", 1>];
