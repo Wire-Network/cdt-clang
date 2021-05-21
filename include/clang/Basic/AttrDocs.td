@@ -1036,6 +1036,13 @@ The ``eosio::action`` attribute marks a method as being an eosio action.
   }];
 }
 
+def EosioReadOnlyDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``eosio::read_only`` attribute marks a method as being a read-only action.
+  }];
+}
+
 def EosioTableDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{

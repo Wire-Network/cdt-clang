@@ -477,6 +477,11 @@ static void handleEosioActionAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
                                 AL.getAttributeSpellingListIndex()));
 }
 
+static void handleEosioReadOnlyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+  D->addAttr(::new (S.Context)
+                 EosioReadOnlyAttr(AL.getRange(), S.Context, AL.getAttributeSpellingListIndex()));
+}
+
 static void handleEosioTableAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str;
@@ -6742,6 +6747,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case ParsedAttr::AT_EosioAction:
     handleEosioActionAttribute(S, D, AL);
+    break;
+  case ParsedAttr::AT_EosioReadOnly:
+    handleEosioReadOnlyAttribute(S, D, AL);
     break;
   case ParsedAttr::AT_EosioTable:
     handleEosioTableAttribute(S, D, AL);
