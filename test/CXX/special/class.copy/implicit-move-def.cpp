@@ -26,7 +26,7 @@ struct H : G {
 
 void f() {
   H s;
-  // CHECK: call void @_ZN1HC1EOS_
+  // CHECK: call void @_ZN1HC1SYS_
   H t(static_cast<H&&>(s));
 }
 
@@ -53,7 +53,7 @@ struct D : C {
 
 void g() {
   D d;
-  // CHECK: call {{.*}} @_ZN1DaSEOS_
+  // CHECK: call {{.*}} @_ZN1DaSSYS_
   d = D();
 }
 
@@ -78,40 +78,40 @@ struct VirtualWithEmptyBase : Empty {
 
 // CHECK: define void @_Z25move_VirtualWithEmptyBaseR20VirtualWithEmptyBaseS0_
 void move_VirtualWithEmptyBase(VirtualWithEmptyBase &x, VirtualWithEmptyBase &y) {
-  // CHECK: call {{.*}} @_ZN20VirtualWithEmptyBaseaSEOS_
+  // CHECK: call {{.*}} @_ZN20VirtualWithEmptyBaseaSSYS_
   x = static_cast<VirtualWithEmptyBase&&>(y);
   // CHECK-NEXT: ret void
 }
 
 // move assignment ops
 
-// CHECK-ASSIGN: define linkonce_odr {{.*}} @_ZN1DaSEOS_
-// CHECK-ASSIGN: call {{.*}} @_ZN1CaSEOS_
-// CHECK-ASSIGN: call {{.*}} @_ZN1AaSEOS_
-// CHECK-ASSIGN: call {{.*}} @_ZN1BaSEOS_
+// CHECK-ASSIGN: define linkonce_odr {{.*}} @_ZN1DaSSYS_
+// CHECK-ASSIGN: call {{.*}} @_ZN1CaSSYS_
+// CHECK-ASSIGN: call {{.*}} @_ZN1AaSSYS_
+// CHECK-ASSIGN: call {{.*}} @_ZN1BaSSYS_
 // array loop
 // CHECK-ASSIGN: br i1
-// CHECK-ASSIGN: call {{.*}} @_ZN1AaSEOS_
+// CHECK-ASSIGN: call {{.*}} @_ZN1AaSSYS_
 
 // VirtualWithEmptyBase move assignment operatpr
-// CHECK-ASSIGN: define linkonce_odr {{.*}} @_ZN20VirtualWithEmptyBaseaSEOS_
+// CHECK-ASSIGN: define linkonce_odr {{.*}} @_ZN20VirtualWithEmptyBaseaSSYS_
 // CHECK-ASSIGN: store
 // CHECK-ASSIGN-NEXT: store
 // CHECK-ASSIGN-NOT: call
 // CHECK-ASSIGN: ret
 
-// CHECK-ASSIGN: define linkonce_odr {{.*}} @_ZN1CaSEOS_
-// CHECK-ASSIGN: call {{.*}} @_ZN1AaSEOS_
+// CHECK-ASSIGN: define linkonce_odr {{.*}} @_ZN1CaSSYS_
+// CHECK-ASSIGN: call {{.*}} @_ZN1AaSSYS_
 
 // move ctors
 
-// CHECK-CTOR: define linkonce_odr {{.*}} @_ZN1HC2EOS_
-// CHECK-CTOR: call {{.*}} @_ZN1GC2EOS_
-// CHECK-CTOR: call {{.*}} @_ZN1FC1EOS_
-// CHECK-CTOR: call {{.*}} @_ZN1EC1EOS_
+// CHECK-CTOR: define linkonce_odr {{.*}} @_ZN1HC2SYS_
+// CHECK-CTOR: call {{.*}} @_ZN1GC2SYS_
+// CHECK-CTOR: call {{.*}} @_ZN1FC1SYS_
+// CHECK-CTOR: call {{.*}} @_ZN1EC1SYS_
 // array loop
-// CHECK-CTOR: call {{.*}} @_ZN1FC1EOS_
+// CHECK-CTOR: call {{.*}} @_ZN1FC1SYS_
 // CHECK-CTOR: br i1
 
-// CHECK-CTOR: define linkonce_odr {{.*}} @_ZN1GC2EOS_
-// CHECK-CTOR: call {{.*}} @_ZN1EC1EOS_
+// CHECK-CTOR: define linkonce_odr {{.*}} @_ZN1GC2SYS_
+// CHECK-CTOR: call {{.*}} @_ZN1EC1SYS_

@@ -57,7 +57,7 @@ S::S(const S&) {}
 
 // CHECK-NOT: _ZN1A
 
-// CHECK: _ZN1SC2EOS_
+// CHECK: _ZN1SC2SYS_
 // CHECK-NOT: _ZN1A
 // CHECK: _ZN1BC1Ev
 S::S(S&&) {}

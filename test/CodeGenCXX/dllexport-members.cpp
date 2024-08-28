@@ -312,16 +312,16 @@ struct ExportSpecials {
 
   // M32-DAG: define dso_local dllexport x86_thiscallcc %struct.ExportSpecials* @"??0ExportSpecials@@QAE@$$QAU0@@Z"(%struct.ExportSpecials* returned %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
   // M64-DAG: define dso_local dllexport                %struct.ExportSpecials* @"??0ExportSpecials@@QEAA@$$QEAU0@@Z"(%struct.ExportSpecials* returned %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
-  // G32-DAG: define dso_local dllexport x86_thiscallcc void @_ZN14ExportSpecialsC1EOS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
-  // G64-DAG: define dso_local dllexport                void @_ZN14ExportSpecialsC1EOS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
-  // G32-DAG: define dso_local dllexport x86_thiscallcc void @_ZN14ExportSpecialsC2EOS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
-  // G64-DAG: define dso_local dllexport                void @_ZN14ExportSpecialsC2EOS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
+  // G32-DAG: define dso_local dllexport x86_thiscallcc void @_ZN14ExportSpecialsC1SYS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
+  // G64-DAG: define dso_local dllexport                void @_ZN14ExportSpecialsC1SYS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
+  // G32-DAG: define dso_local dllexport x86_thiscallcc void @_ZN14ExportSpecialsC2SYS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
+  // G64-DAG: define dso_local dllexport                void @_ZN14ExportSpecialsC2SYS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
   __declspec(dllexport) ExportSpecials(ExportSpecials&&);
 
   // M32-DAG: define dso_local dllexport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.ExportSpecials* @"??4ExportSpecials@@QAEAAU0@$$QAU0@@Z"(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
   // M64-DAG: define dso_local dllexport                dereferenceable({{[0-9]+}}) %struct.ExportSpecials* @"??4ExportSpecials@@QEAAAEAU0@$$QEAU0@@Z"(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
-  // G32-DAG: define dso_local dllexport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.ExportSpecials* @_ZN14ExportSpecialsaSEOS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
-  // G64-DAG: define dso_local dllexport                dereferenceable({{[0-9]+}}) %struct.ExportSpecials* @_ZN14ExportSpecialsaSEOS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
+  // G32-DAG: define dso_local dllexport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.ExportSpecials* @_ZN14ExportSpecialsaSSYS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
+  // G64-DAG: define dso_local dllexport                dereferenceable({{[0-9]+}}) %struct.ExportSpecials* @_ZN14ExportSpecialsaSSYS_(%struct.ExportSpecials* %this, %struct.ExportSpecials* dereferenceable({{[0-9]+}}))
   __declspec(dllexport) ExportSpecials& operator=(ExportSpecials&&);
 };
 ExportSpecials::ExportSpecials() {}
@@ -360,14 +360,14 @@ struct ExportInlineSpecials {
 
   // M32-DAG: define weak_odr dso_local dllexport x86_thiscallcc %struct.ExportInlineSpecials* @"??0ExportInlineSpecials@@QAE@$$QAU0@@Z"(
   // M64-DAG: define weak_odr dso_local dllexport                %struct.ExportInlineSpecials* @"??0ExportInlineSpecials@@QEAA@$$QEAU0@@Z"(
-  // G32-DAG: define weak_odr dso_local dllexport x86_thiscallcc void @_ZN20ExportInlineSpecialsC1EOS_(
-  // G64-DAG: define weak_odr dso_local dllexport                void @_ZN20ExportInlineSpecialsC1EOS_(
+  // G32-DAG: define weak_odr dso_local dllexport x86_thiscallcc void @_ZN20ExportInlineSpecialsC1SYS_(
+  // G64-DAG: define weak_odr dso_local dllexport                void @_ZN20ExportInlineSpecialsC1SYS_(
   __declspec(dllexport) ExportInlineSpecials(ExportInlineSpecials&&) {}
 
   // M32-DAG: define weak_odr dso_local dllexport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.ExportInlineSpecials* @"??4ExportInlineSpecials@@QAEAAU0@$$QAU0@@Z"(
   // M64-DAG: define weak_odr dso_local dllexport                dereferenceable({{[0-9]+}}) %struct.ExportInlineSpecials* @"??4ExportInlineSpecials@@QEAAAEAU0@$$QEAU0@@Z"(
-  // G32-DAG: define weak_odr dso_local dllexport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.ExportInlineSpecials* @_ZN20ExportInlineSpecialsaSEOS_(
-  // G64-DAG: define weak_odr dso_local dllexport                dereferenceable({{[0-9]+}}) %struct.ExportInlineSpecials* @_ZN20ExportInlineSpecialsaSEOS_(
+  // G32-DAG: define weak_odr dso_local dllexport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.ExportInlineSpecials* @_ZN20ExportInlineSpecialsaSSYS_(
+  // G64-DAG: define weak_odr dso_local dllexport                dereferenceable({{[0-9]+}}) %struct.ExportInlineSpecials* @_ZN20ExportInlineSpecialsaSSYS_(
   __declspec(dllexport) ExportInlineSpecials& operator=(ExportInlineSpecials&&) { return *this; }
 };
 ExportInlineSpecials::ExportInlineSpecials(const ExportInlineSpecials&) {}
@@ -416,16 +416,16 @@ inline ExportDefaultedDefs& ExportDefaultedDefs::operator=(const ExportDefaulted
 
 // M32-DAG: define dso_local dllexport x86_thiscallcc %struct.ExportDefaultedDefs* @"??0ExportDefaultedDefs@@QAE@$$QAU0@@Z"(%struct.ExportDefaultedDefs* returned %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
 // M64-DAG: define dso_local dllexport                %struct.ExportDefaultedDefs* @"??0ExportDefaultedDefs@@QEAA@$$QEAU0@@Z"(%struct.ExportDefaultedDefs* returned %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
-// G32-DAG: define dso_local dllexport x86_thiscallcc void @_ZN19ExportDefaultedDefsC1EOS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
-// G64-DAG: define dso_local dllexport                void @_ZN19ExportDefaultedDefsC1EOS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
-// G32-DAG: define dso_local dllexport x86_thiscallcc void @_ZN19ExportDefaultedDefsC2EOS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
-// G64-DAG: define dso_local dllexport                void @_ZN19ExportDefaultedDefsC2EOS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
+// G32-DAG: define dso_local dllexport x86_thiscallcc void @_ZN19ExportDefaultedDefsC1SYS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
+// G64-DAG: define dso_local dllexport                void @_ZN19ExportDefaultedDefsC1SYS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
+// G32-DAG: define dso_local dllexport x86_thiscallcc void @_ZN19ExportDefaultedDefsC2SYS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
+// G64-DAG: define dso_local dllexport                void @_ZN19ExportDefaultedDefsC2SYS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
 __declspec(dllexport) ExportDefaultedDefs::ExportDefaultedDefs(ExportDefaultedDefs&&) = default;
 
 // M32-DAG: define dso_local dllexport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.ExportDefaultedDefs* @"??4ExportDefaultedDefs@@QAEAAU0@$$QAU0@@Z"(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
 // M64-DAG: define dso_local dllexport                dereferenceable({{[0-9]+}}) %struct.ExportDefaultedDefs* @"??4ExportDefaultedDefs@@QEAAAEAU0@$$QEAU0@@Z"(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
-// G32-DAG: define dso_local dllexport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.ExportDefaultedDefs* @_ZN19ExportDefaultedDefsaSEOS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
-// G64-DAG: define dso_local dllexport                dereferenceable({{[0-9]+}}) %struct.ExportDefaultedDefs* @_ZN19ExportDefaultedDefsaSEOS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
+// G32-DAG: define dso_local dllexport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.ExportDefaultedDefs* @_ZN19ExportDefaultedDefsaSSYS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
+// G64-DAG: define dso_local dllexport                dereferenceable({{[0-9]+}}) %struct.ExportDefaultedDefs* @_ZN19ExportDefaultedDefsaSSYS_(%struct.ExportDefaultedDefs* %this, %struct.ExportDefaultedDefs* dereferenceable({{[0-9]+}}))
 ExportDefaultedDefs& ExportDefaultedDefs::operator=(ExportDefaultedDefs&&) = default;
 
 

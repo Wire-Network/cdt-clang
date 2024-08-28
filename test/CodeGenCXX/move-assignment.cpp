@@ -18,8 +18,8 @@ void test1() {
   b1 = static_cast<B&&>(b2);
 }
 
-// CHECK-LABEL: define {{.*}} @_ZN1BaSEOS_
-// CHECK: call {{.*}} @_ZN1AaSEOS_
+// CHECK-LABEL: define {{.*}} @_ZN1BaSSYS_
+// CHECK: call {{.*}} @_ZN1AaSSYS_
 // CHECK-NOT: store
 // CHECK: call {{.*}}memcpy{{.*}}, i64 24
 // CHECK-NOT: store

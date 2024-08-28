@@ -22,9 +22,9 @@ X Test()
   // Check that the copy constructor for X is called with result variable as
   // sret argument.
   // CHECK-CXX98: call void @_ZN1XC1ERKS_(
-  // CHECK-CXX11: call void @_ZN1XC1EOS_(
+  // CHECK-CXX11: call void @_ZN1XC1SYS_(
   // CHECK-CXX98-ELIDE-NOT: call void @_ZN1XC1ERKS_(
-  // CHECK-CXX11-ELIDE-NOT: call void @_ZN1XC1EOS_(
+  // CHECK-CXX11-ELIDE-NOT: call void @_ZN1XC1SYS_(
 
   // Make sure that the destructor for X is called.
   // FIXME: This call is present even in the -ELIDE runs, but is guarded by a

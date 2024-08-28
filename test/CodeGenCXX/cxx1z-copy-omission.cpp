@@ -91,7 +91,7 @@ void j() {
   // CHECK:   call zeroext i1 @_ZN1AcvbEv(%{{.*}} %[[INNERTEMP]])
   // CHECK:   br i1
   //
-  // CHECK:   call void @_ZN1AC1EOS_(%{{.*}} %[[OUTERTEMP]], %{{.*}} %[[INNERTEMP]])
+  // CHECK:   call void @_ZN1AC1SYS_(%{{.*}} %[[OUTERTEMP]], %{{.*}} %[[INNERTEMP]])
   // CHECK:   br label
   //
   // CHECK:   call void @_ZN1AC1Ei(%{{.*}} %[[OUTERTEMP]], i32 2)

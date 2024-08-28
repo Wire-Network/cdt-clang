@@ -395,18 +395,18 @@ bool Sema::checkStringLiteralArgumentAttr(const ParsedAttr &AL, unsigned ArgNum,
   return true;
 }
 
-static void handleEosioRicardianAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+static void handleSysioRicardianAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
    D->addAttr(::new (S.Context)
-                 EosioRicardianAttr(AL.getRange(), S.Context, Str,
+                 SysioRicardianAttr(AL.getRange(), S.Context, Str,
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioNotifyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+static void handleSysioNotifyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
@@ -414,34 +414,22 @@ static void handleEosioNotifyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
 
    D->addAttr(::new (S.Context)
-                 EosioNotifyAttr(AL.getRange(), S.Context, Str,
+                 SysioNotifyAttr(AL.getRange(), S.Context, Str,
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioContractAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+static void handleSysioContractAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
       !S.checkStringLiteralArgumentAttr(AL, 0, Str))
     return;
   D->addAttr(::new (S.Context)
-                 EosioContractAttr(AL.getRange(), S.Context, Str,
+                 SysioContractAttr(AL.getRange(), S.Context, Str,
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioABIAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
-  // Handle the cases where the attribute has a text message.
-  StringRef Str;
-  if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
-      !S.checkStringLiteralArgumentAttr(AL, 0, Str))
-    return;
-
-  D->addAttr(::new (S.Context)
-                 EosioWasmABIAttr(AL.getRange(), S.Context, Str,
-                                AL.getAttributeSpellingListIndex()));
-}
-
-static void handleEosioWasmActionAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+static void handleSysioABIAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
@@ -449,11 +437,11 @@ static void handleEosioWasmActionAttribute(Sema &S, Decl *D, const ParsedAttr &A
     return;
 
   D->addAttr(::new (S.Context)
-                 EosioWasmActionAttr(AL.getRange(), S.Context, Str,
+                 SysioWasmABIAttr(AL.getRange(), S.Context, Str,
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioWasmNotifyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+static void handleSysioWasmActionAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
@@ -461,11 +449,11 @@ static void handleEosioWasmNotifyAttribute(Sema &S, Decl *D, const ParsedAttr &A
     return;
 
   D->addAttr(::new (S.Context)
-                 EosioWasmNotifyAttr(AL.getRange(), S.Context, Str,
+                 SysioWasmActionAttr(AL.getRange(), S.Context, Str,
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioActionAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+static void handleSysioWasmNotifyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
@@ -473,16 +461,11 @@ static void handleEosioActionAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
 
   D->addAttr(::new (S.Context)
-                 EosioActionAttr(AL.getRange(), S.Context, Str,
+                 SysioWasmNotifyAttr(AL.getRange(), S.Context, Str,
                                 AL.getAttributeSpellingListIndex()));
 }
 
-static void handleEosioReadOnlyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
-  D->addAttr(::new (S.Context)
-                 EosioReadOnlyAttr(AL.getRange(), S.Context, AL.getAttributeSpellingListIndex()));
-}
-
-static void handleEosioTableAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+static void handleSysioActionAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Handle the cases where the attribute has a text message.
   StringRef Str;
   if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
@@ -490,7 +473,24 @@ static void handleEosioTableAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
 
   D->addAttr(::new (S.Context)
-                 EosioTableAttr(AL.getRange(), S.Context, Str,
+                 SysioActionAttr(AL.getRange(), S.Context, Str,
+                                AL.getAttributeSpellingListIndex()));
+}
+
+static void handleSysioReadOnlyAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+  D->addAttr(::new (S.Context)
+                 SysioReadOnlyAttr(AL.getRange(), S.Context, AL.getAttributeSpellingListIndex()));
+}
+
+static void handleSysioTableAttribute(Sema &S, Decl *D, const ParsedAttr &AL) {
+  // Handle the cases where the attribute has a text message.
+  StringRef Str;
+  if (AL.isArgExpr(0) && AL.getArgAsExpr(0) &&
+      !S.checkStringLiteralArgumentAttr(AL, 0, Str))
+    return;
+
+  D->addAttr(::new (S.Context)
+                 SysioTableAttr(AL.getRange(), S.Context, Str,
                                 AL.getAttributeSpellingListIndex()));
 }
 
@@ -6736,41 +6736,41 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     S.Diag(AL.getLoc(), diag::err_stmt_attribute_invalid_on_decl)
         << AL << D->getLocation();
     break;
-  case ParsedAttr::AT_EosioWasmImport:
-    handleSimpleAttribute<EosioWasmImportAttr>(S, D, AL);
+  case ParsedAttr::AT_SysioWasmImport:
+    handleSimpleAttribute<SysioWasmImportAttr>(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioWasmEntry:
-    handleSimpleAttribute<EosioWasmEntryAttr>(S, D, AL);
+  case ParsedAttr::AT_SysioWasmEntry:
+    handleSimpleAttribute<SysioWasmEntryAttr>(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioIgnore:
-    handleSimpleAttribute<EosioIgnoreAttr>(S, D, AL);
+  case ParsedAttr::AT_SysioIgnore:
+    handleSimpleAttribute<SysioIgnoreAttr>(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioAction:
-    handleEosioActionAttribute(S, D, AL);
+  case ParsedAttr::AT_SysioAction:
+    handleSysioActionAttribute(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioReadOnly:
-    handleEosioReadOnlyAttribute(S, D, AL);
+  case ParsedAttr::AT_SysioReadOnly:
+    handleSysioReadOnlyAttribute(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioTable:
-    handleEosioTableAttribute(S, D, AL);
+  case ParsedAttr::AT_SysioTable:
+    handleSysioTableAttribute(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioWasmABI:
-    handleEosioABIAttribute(S, D, AL);
+  case ParsedAttr::AT_SysioWasmABI:
+    handleSysioABIAttribute(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioWasmAction:
-    handleEosioWasmActionAttribute(S, D, AL);
+  case ParsedAttr::AT_SysioWasmAction:
+    handleSysioWasmActionAttribute(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioWasmNotify:
-    handleEosioWasmNotifyAttribute(S, D, AL);
+  case ParsedAttr::AT_SysioWasmNotify:
+    handleSysioWasmNotifyAttribute(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioContract:
-    handleEosioContractAttribute(S, D, AL);
+  case ParsedAttr::AT_SysioContract:
+    handleSysioContractAttribute(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioRicardian:
-    handleEosioRicardianAttribute(S, D, AL);
+  case ParsedAttr::AT_SysioRicardian:
+    handleSysioRicardianAttribute(S, D, AL);
     break;
-  case ParsedAttr::AT_EosioNotify:
-    handleEosioNotifyAttribute(S, D, AL);
+  case ParsedAttr::AT_SysioNotify:
+    handleSysioNotifyAttribute(S, D, AL);
     break;
   case ParsedAttr::AT_Interrupt:
     handleInterruptAttr(S, D, AL);

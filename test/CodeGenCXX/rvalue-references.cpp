@@ -75,9 +75,9 @@ C test_move_return() {
   // CHECK: call void @_ZN1CC1Ei
   C a2(4);
   if (ok)
-    // CHECK: call void @_ZN1CC1EOS_
+    // CHECK: call void @_ZN1CC1SYS_
     return a1;
-  // CHECK: call void @_ZN1CC1EOS_
+  // CHECK: call void @_ZN1CC1SYS_
   return a2;
   // CHECK: call void @_ZN1CD1Ev
   // CHECK: call void @_ZN1CD1Ev

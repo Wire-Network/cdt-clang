@@ -8,7 +8,7 @@ namespace Implicit {
   static_assert(sizeof(C) == sizeof(void*) + 8);
   C f(C c) { return c; }
 
-  // CHECK: define {{.*}} @_ZN8Implicit1CC1EOS0_
+  // CHECK: define {{.*}} @_ZN8Implicit1CC1SYS0_
   // CHECK: call {{.*}} @_ZN8Implicit1AC2ERKS0_(
   // Note: this must memcpy 7 bytes, not 8, to avoid trampling over the virtual base class.
   // CHECK: call void @llvm.memcpy.p0i8.p0i8.i{{32|64}}(i8* {{.*}}, i8* {{.*}}, i{{32|64}} 7, i1 false)
@@ -25,7 +25,7 @@ namespace InitWithinNVSize {
   static_assert(sizeof(C) > sizeof(void*) + 8);
   C f(C c) { return c; }
 
-  // CHECK: define {{.*}} @_ZN16InitWithinNVSize1CC1EOS0_
+  // CHECK: define {{.*}} @_ZN16InitWithinNVSize1CC1SYS0_
   // CHECK: call {{.*}} @_ZN16InitWithinNVSize1AC2ERKS0_(
   // This copies over the 'C::x' member, but that's OK because we've not initialized it yet.
   // CHECK: call void @llvm.memcpy.p0i8.p0i8.i{{32|64}}(i8* {{.*}}, i8* {{.*}}, i{{32|64}} 8, i1 false)
@@ -43,21 +43,21 @@ namespace NoUniqueAddr {
   static_assert(sizeof(D) == sizeof(void*) + 8);
   static_assert(sizeof(E) == sizeof(void*) + 8 + alignof(void*));
 
-  // CHECK: define {{.*}} @_ZN12NoUniqueAddr1CC1EOS0_
+  // CHECK: define {{.*}} @_ZN12NoUniqueAddr1CC1SYS0_
   // CHECK: call {{.*}} @_ZN12NoUniqueAddr1AC2ERKS0_(
   // CHECK: store i32 {{.*}} @_ZTVN12NoUniqueAddr1CE
   // Copy the full size of B.
   // CHECK: call void @llvm.memcpy.p0i8.p0i8.i{{32|64}}(i8* {{.*}}, i8* {{.*}}, i{{32|64}} 8, i1 false)
   C f(C c) { return c; }
 
-  // CHECK: define {{.*}} @_ZN12NoUniqueAddr1DC1EOS0_
+  // CHECK: define {{.*}} @_ZN12NoUniqueAddr1DC1SYS0_
   // CHECK: call {{.*}} @_ZN12NoUniqueAddr1AC2ERKS0_(
   // CHECK: store i32 {{.*}} @_ZTVN12NoUniqueAddr1DE
   // Copy just the data size of B, to avoid overwriting the A base class.
   // CHECK: call void @llvm.memcpy.p0i8.p0i8.i{{32|64}}(i8* {{.*}}, i8* {{.*}}, i{{32|64}} 7, i1 false)
   D f(D d) { return d; }
 
-  // CHECK: define {{.*}} @_ZN12NoUniqueAddr1EC1EOS0_
+  // CHECK: define {{.*}} @_ZN12NoUniqueAddr1EC1SYS0_
   // CHECK: call {{.*}} @_ZN12NoUniqueAddr1AC2ERKS0_(
   // CHECK: store i32 {{.*}} @_ZTVN12NoUniqueAddr1EE
   // We can copy the full size of B here. (As it happens, we fold the copy of 'x' into

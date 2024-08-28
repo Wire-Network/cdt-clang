@@ -16,7 +16,7 @@ struct C : B {
 C c1;
 // CHECK-DAG: define {{.*}} @_ZN1BC2ERKS_({{.*}} #[[NOUNWIND]]
 C c2(c1);
-// CHECK-DAG: define {{.*}} @_ZN1BC2EOS_({{.*}} #[[NOUNWIND]]
+// CHECK-DAG: define {{.*}} @_ZN1BC2SYS_({{.*}} #[[NOUNWIND]]
 C c3(static_cast<C&&>(c1));
 
 // CHECK-DAG: #[[NOUNWIND]] = {{{.*}} nounwind

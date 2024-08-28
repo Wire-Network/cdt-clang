@@ -192,11 +192,11 @@ namespace PR10720 {
     // CHECK-PR10720: ret
     pair2 &operator=(const pair2&) = default;
 
-    // CHECK-PR10720: define linkonce_odr {{.*}} @_ZN7PR107205pair2aSEOS0_
+    // CHECK-PR10720: define linkonce_odr {{.*}} @_ZN7PR107205pair2aSSYS0_
     // CHECK-PR10720: load
     // CHECK-PR10720: icmp ne
     // CHECK-PR10720-NEXT: br i1
-    // CHECK-PR10720: call {{.*}} @_ZN7PR107201XaSEOS0_
+    // CHECK-PR10720: call {{.*}} @_ZN7PR107201XaSSYS0_
     // CHECK-PR10720: ret
     pair2 &operator=(pair2&&) = default;
 
@@ -212,10 +212,10 @@ namespace PR10720 {
     // CHECK-PR10720-NEXT: br i1
     // CHECK-PR10720: ret void
 
-    // CHECK-PR10720-LABEL: define linkonce_odr void @_ZN7PR107205pair2C2EOS0_
+    // CHECK-PR10720-LABEL: define linkonce_odr void @_ZN7PR107205pair2C2SYS0_
     // CHECK-PR10720-NOT: ret
     // CHECK-PR10720: load
-    // CHECK-PR10720: call void @_ZN7PR107201XC1EOS0_
+    // CHECK-PR10720: call void @_ZN7PR107201XC1SYS0_
     // CHECK-PR10720: icmp eq
     // CHECK-PR10720-NEXT: br i1
     // CHECK-PR10720: ret void

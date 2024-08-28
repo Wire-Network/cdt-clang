@@ -23,7 +23,7 @@ id test0() {
 // CHECK-NEXT:  [[T3:%.*]] = call i8* @llvm.objc.storeWeak(i8** [[T2]], i8* [[T1]])
 
 // Move Assignment Operator
-// CHECK-LABEL: define linkonce_odr dereferenceable({{[0-9]+}}) %struct.A* @_ZN1AaSEOS_(
+// CHECK-LABEL: define linkonce_odr dereferenceable({{[0-9]+}}) %struct.A* @_ZN1AaSSYS_(
 // CHECK:       [[THISADDR:%this.*]] = alloca [[A:.*]]*
 // CHECK:       [[OBJECTADDR:%.*]] = alloca [[A:.*]]*
 // CHECK:       [[THIS:%this.*]] = load [[A]]*, [[A]]** [[THISADDR]]
@@ -51,7 +51,7 @@ id test0() {
 // CHECK-NEXT:  call void @llvm.objc.copyWeak(i8** [[T0]], i8** [[T1]])
 
 // Move Constructor
-// CHECK-LABEL: define linkonce_odr void @_ZN1AC2EOS_(
+// CHECK-LABEL: define linkonce_odr void @_ZN1AC2SYS_(
 // CHECK:       [[THISADDR:%this.*]] = alloca [[A:.*]]*
 // CHECK:       [[OBJECTADDR:%.*]] = alloca [[A:.*]]*
 // CHECK:       [[THIS:%this.*]] = load [[A]]*, [[A]]** [[THISADDR]]

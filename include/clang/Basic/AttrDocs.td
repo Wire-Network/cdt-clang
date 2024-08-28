@@ -1001,52 +1001,52 @@ Sample usage:
   }];
 }
 
-def EosioIgnoreDocs : Documentation {
+def SysioIgnoreDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-The ``eosio::ignore`` attribute marks a template struct as an ignorable type.
+The ``sysio::ignore`` attribute marks a template struct as an ignorable type.
   }];
 }
 
-def EosioRicardianDocs : Documentation {
+def SysioRicardianDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-The ``eosio::ricardian`` attribute specifies filename of ricardian contract.
+The ``sysio::ricardian`` attribute specifies filename of ricardian contract.
   }];
 }
 
-def EosioContractDocs : Documentation {
+def SysioContractDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-The ``eosio::contract`` attribute marks a method as being an eosio contract.
+The ``sysio::contract`` attribute marks a method as being an sysio contract.
   }];
 }
 
-def EosioWasmImportDocs : Documentation {
+def SysioWasmImportDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-The ``eosio::wasm_import`` attribute marks a function as a wasm import.
+The ``sysio::wasm_import`` attribute marks a function as a wasm import.
   }];
 }
 
-def EosioActionDocs : Documentation {
+def SysioActionDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-The ``eosio::action`` attribute marks a method as being an eosio action.
+The ``sysio::action`` attribute marks a method as being an sysio action.
   }];
 }
 
-def EosioReadOnlyDocs : Documentation {
+def SysioReadOnlyDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-The ``eosio::read_only`` attribute marks a method as being a read-only action.
+The ``sysio::read_only`` attribute marks a method as being a read-only action.
   }];
 }
 
-def EosioTableDocs : Documentation {
+def SysioTableDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-The ``eosio::table`` attribute marks a record as being an eosio table.
+The ``sysio::table`` attribute marks a record as being an sysio table.
   }];
 }
 

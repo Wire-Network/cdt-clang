@@ -35,7 +35,7 @@ class ValidateVisitor : public RecursiveASTVisitor<ValidateVisitor> {
       auto check = [&](const clang::Type* pt) {
         if (auto tst = llvm::dyn_cast<clang::TemplateSpecializationType>(pt)) {
          if (auto rt = llvm::dyn_cast<clang::RecordType>(tst->desugar()))
-            return rt->getDecl()->isEosioIgnore();
+            return rt->getDecl()->isSysioIgnore();
         }
 
          return false;

@@ -248,15 +248,15 @@
 // LINK_X86_64H_MULTIARCH: "x86_64h"
 
 // Check for the linker options to specify the iOS version when the
-// IPHONEOS_DEPLOYMENT_TARGET variable is used instead of the command-line
+// IPHONSYS_DEPLOYMENT_TARGET variable is used instead of the command-line
 // deployment target options.
-// RUN: env IPHONEOS_DEPLOYMENT_TARGET=7.0 \
+// RUN: env IPHONSYS_DEPLOYMENT_TARGET=7.0 \
 // RUN:   %clang -target arm64-apple-darwin -### %t.o 2> %t.log
-// RUN: FileCheck -check-prefix=LINK_IPHONEOS_VERSION_MIN %s < %t.log
-// RUN: env IPHONEOS_DEPLOYMENT_TARGET=7.0 \
+// RUN: FileCheck -check-prefix=LINK_IPHONSYS_VERSION_MIN %s < %t.log
+// RUN: env IPHONSYS_DEPLOYMENT_TARGET=7.0 \
 // RUN:   %clang -target i386-apple-darwin -### %t.o 2> %t.log
 // RUN: FileCheck -check-prefix=LINK_IOS_SIMULATOR_VERSION_MIN %s < %t.log
-// LINK_IPHONEOS_VERSION_MIN: -iphoneos_version_min
+// LINK_IPHONSYS_VERSION_MIN: -iphoneos_version_min
 // LINK_IOS_SIMULATOR_VERSION_MIN: -ios_simulator_version_min
 
 // Ditto for tvOS....
@@ -374,12 +374,12 @@
 // GCOV_EXPORT: "-exported_symbol" "___gcov_flush"
 //
 // Check that we can pass the outliner down to the linker.
-// RUN: env IPHONEOS_DEPLOYMENT_TARGET=7.0 \
+// RUN: env IPHONSYS_DEPLOYMENT_TARGET=7.0 \
 // RUN:   %clang -target arm64-apple-darwin -moutline -### %t.o 2> %t.log
 // RUN: FileCheck -check-prefix=MOUTLINE %s < %t.log
 // MOUTLINE: {{ld(.exe)?"}}
 // MOUTLINE-SAME: "-mllvm" "-enable-machine-outliner" "-mllvm" "-enable-linkonceodr-outlining"
-// RUN: env IPHONEOS_DEPLOYMENT_TARGET=7.0 \
+// RUN: env IPHONSYS_DEPLOYMENT_TARGET=7.0 \
 // RUN:   %clang -target arm64-apple-darwin -mno-outline -### %t.o 2> %t.log
 // RUN: FileCheck -check-prefix=MNO_OUTLINE %s < %t.log
 // MNO_OUTLINE: {{ld(.exe)?"}}

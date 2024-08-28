@@ -631,7 +631,7 @@ void ThisAlign::this_align_lambda() {
 namespace CopyValueRepresentation {
   // CHECK-LABEL: define {{.*}} @_ZN23CopyValueRepresentation2S3aSERKS0_
   // CHECK-NOT: call {{.*}} @__ubsan_handle_load_invalid_value
-  // CHECK-LABEL: define {{.*}} @_ZN23CopyValueRepresentation2S4aSEOS0_
+  // CHECK-LABEL: define {{.*}} @_ZN23CopyValueRepresentation2S4aSSYS0_
   // CHECK-NOT: call {{.*}} @__ubsan_handle_load_invalid_value
   // CHECK-LABEL: define {{.*}} @_ZN23CopyValueRepresentation2S1C2ERKS0_
   // CHECK-NOT: call {{.*}} __ubsan_handle_load_invalid_value

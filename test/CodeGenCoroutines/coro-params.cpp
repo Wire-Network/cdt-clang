@@ -69,8 +69,8 @@ void f(int val, MoveOnly moParam, MoveAndCopy mcParam) {
   // CHECK: store i32 %val, i32* %[[ValAddr:.+]]
 
   // CHECK: call i8* @llvm.coro.begin(
-  // CHECK: call void @_ZN8MoveOnlyC1EOS_(%struct.MoveOnly* %[[MoCopy]], %struct.MoveOnly* dereferenceable(4) %[[MoParam]])
-  // CHECK-NEXT: call void @_ZN11MoveAndCopyC1EOS_(%struct.MoveAndCopy* %[[McCopy]], %struct.MoveAndCopy* dereferenceable(4) %[[McParam]]) #
+  // CHECK: call void @_ZN8MoveOnlyC1SYS_(%struct.MoveOnly* %[[MoCopy]], %struct.MoveOnly* dereferenceable(4) %[[MoParam]])
+  // CHECK-NEXT: call void @_ZN11MoveAndCopyC1SYS_(%struct.MoveAndCopy* %[[McCopy]], %struct.MoveAndCopy* dereferenceable(4) %[[McParam]]) #
   // CHECK-NEXT: invoke void @_ZNSt12experimental16coroutine_traitsIJvi8MoveOnly11MoveAndCopyEE12promise_typeC1Ev(
 
   // CHECK: call void @_ZN14suspend_always12await_resumeEv(
@@ -103,9 +103,9 @@ void dependent_params(T x, U, U y) {
   // CHECK-NEXT: %[[y_copy:.+]] = alloca %struct.B
 
   // CHECK: call i8* @llvm.coro.begin
-  // CHECK-NEXT: call void @_ZN1AC1EOS_(%struct.A* %[[x_copy]], %struct.A* dereferenceable(512) %x)
-  // CHECK-NEXT: call void @_ZN1BC1EOS_(%struct.B* %[[unnamed_copy]], %struct.B* dereferenceable(512) %0)
-  // CHECK-NEXT: call void @_ZN1BC1EOS_(%struct.B* %[[y_copy]], %struct.B* dereferenceable(512) %y)
+  // CHECK-NEXT: call void @_ZN1AC1SYS_(%struct.A* %[[x_copy]], %struct.A* dereferenceable(512) %x)
+  // CHECK-NEXT: call void @_ZN1BC1SYS_(%struct.B* %[[unnamed_copy]], %struct.B* dereferenceable(512) %0)
+  // CHECK-NEXT: call void @_ZN1BC1SYS_(%struct.B* %[[y_copy]], %struct.B* dereferenceable(512) %y)
   // CHECK-NEXT: invoke void @_ZNSt12experimental16coroutine_traitsIJv1A1BS2_EE12promise_typeC1Ev(
 
   co_return;
