@@ -6,7 +6,7 @@
 // RUN: mkdir -p %t/SDKs/iPhoneOS8.0.0.sdk
 // RUN: env SDKROOT=%t/SDKs/iPhoneOS8.0.0.sdk %clang %s -### 2>&1 \
 // RUN:   | FileCheck --check-prefix=CHECK-IPHONE %s
-// RUN: env SDKROOT=%t/SDKs/iPhoneOS8.0.0.sdk IPHONSYS_DEPLOYMENT_TARGET=8.0 %clang %s -### 2>&1 \
+// RUN: env SDKROOT=%t/SDKs/iPhoneOS8.0.0.sdk IPHONEOS_DEPLOYMENT_TARGET=8.0 %clang %s -### 2>&1 \
 // RUN:   | FileCheck --check-prefix=CHECK-IPHONE %s
 // CHECK-IPHONE: clang
 // CHECK-IPHONE: "-cc1"

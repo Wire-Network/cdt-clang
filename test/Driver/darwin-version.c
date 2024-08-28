@@ -11,10 +11,10 @@
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-IOS3 %s
 // CHECK-VERSION-IOS3: "armv6k-apple-ios3.0.0"
 
-// RUN: env IPHONSYS_DEPLOYMENT_TARGET=11.0 \
+// RUN: env IPHONEOS_DEPLOYMENT_TARGET=11.0 \
 // RUN:   %clang -target armv7-apple-darwin -c -### %s 2> %t.err
 // RUN:   FileCheck --input-file=%t.err --check-prefix=CHECK-VERSION-IOS4 %s
-// CHECK-VERSION-IOS4: invalid iOS deployment version 'IPHONSYS_DEPLOYMENT_TARGET=11.0'
+// CHECK-VERSION-IOS4: invalid iOS deployment version 'IPHONEOS_DEPLOYMENT_TARGET=11.0'
 
 // RUN: %clang -target armv7-apple-ios11.0 -c -### %s 2> %t.err
 // RUN: FileCheck --input-file=%t.err --check-prefix=CHECK-VERSION-IOS41 %s
@@ -35,7 +35,7 @@
 // RUN: FileCheck --check-prefix=CHECK-VERSION-IOS7 %s
 // CHECK-VERSION-IOS7: thumbv7-apple-ios10.99.99
 
-// RUN: env IPHONSYS_DEPLOYMENT_TARGET=11.0 \
+// RUN: env IPHONEOS_DEPLOYMENT_TARGET=11.0 \
 // RUN:   %clang -target arm64-apple-darwin -c -### %s 2>&1 | \
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-IOS8 %s
 // CHECK-VERSION-IOS8: arm64-apple-ios11.0.0
@@ -99,10 +99,10 @@
 // CHECK-VERSION-WATCHSIM20: "i386-apple-watchos2.0.0-simulator"
 
 // Check environment variable gets interpreted correctly
-// RUN: env MACOSX_DEPLOYMENT_TARGET=10.5 IPHONSYS_DEPLOYMENT_TARGET=2.0 \
+// RUN: env MACOSX_DEPLOYMENT_TARGET=10.5 IPHONEOS_DEPLOYMENT_TARGET=2.0 \
 // RUN:   %clang -target i386-apple-darwin9 -c %s -### 2>&1 | \
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-OSX5 %s
-// RUN: env MACOSX_DEPLOYMENT_TARGET=10.5 IPHONSYS_DEPLOYMENT_TARGET=2.0 \
+// RUN: env MACOSX_DEPLOYMENT_TARGET=10.5 IPHONEOS_DEPLOYMENT_TARGET=2.0 \
 // RUN:   %clang -target armv6-apple-darwin9 -c %s -### 2>&1 | \
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-IOS2 %s
 
@@ -110,7 +110,7 @@
 // RUN:   %clang -target i386-apple-darwin9 -c %s -### 2>&1 | \
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-OSX49 %s
 // CHECK-VERSION-OSX49: "i386-apple-macosx10.4.10"
-// RUN: env IPHONSYS_DEPLOYMENT_TARGET=2.3.1 \
+// RUN: env IPHONEOS_DEPLOYMENT_TARGET=2.3.1 \
 // RUN:   %clang -target armv6-apple-darwin9 -c %s -### 2>&1 | \
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-IOS231 %s
 // CHECK-VERSION-IOS231: "armv6k-apple-ios2.3.1"
@@ -180,7 +180,7 @@
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-TDARWIN-FALL2 %s
 // CHECK-VERSION-TDARWIN-FALL2: "x86_64-apple-ios10.1.0-simulator"
 
-// RUN: env IPHONSYS_DEPLOYMENT_TARGET=9.1 \
+// RUN: env IPHONEOS_DEPLOYMENT_TARGET=9.1 \
 // RUN:   %clang -target arm64-apple-darwin14 -c %s -### 2>&1 | \
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-TDARWIN-FALL3 %s
 // CHECK-VERSION-TDARWIN-FALL3: "arm64-apple-ios9.1.0"
@@ -261,7 +261,7 @@
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-TMACOS-CMD %s
 // CHECK-VERSION-TMACOS-CMD: "i386-apple-macosx10.5.0"
 
-// RUN: env IPHONSYS_DEPLOYMENT_TARGET=10.1 \
+// RUN: env IPHONEOS_DEPLOYMENT_TARGET=10.1 \
 // RUN:   %clang -target arm64-apple-ios11 -c %s -### 2>&1 | \
 // RUN:   FileCheck --check-prefix=CHECK-VERSION-TIOS-CMD %s
 // CHECK-VERSION-TIOS-CMD: "arm64-apple-ios11.0.0"

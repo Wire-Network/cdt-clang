@@ -1469,7 +1469,7 @@ getDeploymentTargetFromEnvironmentVariables(const Driver &TheDriver,
   std::string Targets[Darwin::LastDarwinPlatform + 1];
   const char *EnvVars[] = {
       "MACOSX_DEPLOYMENT_TARGET",
-      "IPHONSYS_DEPLOYMENT_TARGET",
+      "IPHONEOS_DEPLOYMENT_TARGET",
       "TVOS_DEPLOYMENT_TARGET",
       "WATCHOS_DEPLOYMENT_TARGET",
   };
@@ -1485,7 +1485,7 @@ getDeploymentTargetFromEnvironmentVariables(const Driver &TheDriver,
       (!Targets[Darwin::IPhoneOS].empty() || !Targets[Darwin::TvOS].empty())) {
     TheDriver.Diag(diag::err_drv_conflicting_deployment_targets)
         << "WATCHOS_DEPLOYMENT_TARGET"
-        << (!Targets[Darwin::IPhoneOS].empty() ? "IPHONSYS_DEPLOYMENT_TARGET"
+        << (!Targets[Darwin::IPhoneOS].empty() ? "IPHONEOS_DEPLOYMENT_TARGET"
                                                : "TVOS_DEPLOYMENT_TARGET");
   }
 
@@ -1493,7 +1493,7 @@ getDeploymentTargetFromEnvironmentVariables(const Driver &TheDriver,
   if (!Targets[Darwin::TvOS].empty() && !Targets[Darwin::IPhoneOS].empty()) {
     TheDriver.Diag(diag::err_drv_conflicting_deployment_targets)
         << "TVOS_DEPLOYMENT_TARGET"
-        << "IPHONSYS_DEPLOYMENT_TARGET";
+        << "IPHONEOS_DEPLOYMENT_TARGET";
   }
 
   // Allow conflicts among OSX and iOS for historical reasons, but choose the
