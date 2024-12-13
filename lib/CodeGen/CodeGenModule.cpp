@@ -3001,15 +3001,15 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
   // Any attempts to use a MultiVersion function should result in retrieving
   // the iFunc instead. Name Mangling will handle the rest of the changes.
   if (const FunctionDecl *FD = cast_or_null<FunctionDecl>(D)) {
-     if (FD->hasAttr<EosioWasmImportAttr>())
+     if (FD->hasAttr<SysioWasmImportAttr>())
         isWasmImport = true;
-     if (FD->hasAttr<EosioWasmEntryAttr>())
+     if (FD->hasAttr<SysioWasmEntryAttr>())
         isWasmEntry = true;
-     if (FD->hasAttr<EosioWasmABIAttr>())
+     if (FD->hasAttr<SysioWasmABIAttr>())
         isWasmABI = true;
-     if (FD->hasAttr<EosioWasmActionAttr>())
+     if (FD->hasAttr<SysioWasmActionAttr>())
         isWasmAction = true;
-     if (FD->hasAttr<EosioWasmNotifyAttr>())
+     if (FD->hasAttr<SysioWasmNotifyAttr>())
         isWasmNotify = true;
 
 
@@ -3133,22 +3133,22 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
     F->addAttributes(llvm::AttributeList::FunctionIndex, B);
   }
   if (isWasmImport)
-   F->addFnAttr("eosio_wasm_import", "true");
+   F->addFnAttr("sysio_wasm_import", "true");
 
   if (isWasmEntry)
-   F->addFnAttr("eosio_wasm_entry", "true");
+   F->addFnAttr("sysio_wasm_entry", "true");
      
   if (isWasmABI)
      if (const FunctionDecl *FD = cast_or_null<FunctionDecl>(D)) {
-        F->addFnAttr("eosio_wasm_abi", FD->getWasmABI().c_str());
+        F->addFnAttr("sysio_wasm_abi", FD->getWasmABI().c_str());
      }
   if (isWasmAction)
      if (const FunctionDecl *FD = cast_or_null<FunctionDecl>(D)) {
-        F->addFnAttr("eosio_wasm_action", FD->getEosioWasmAction().c_str());
+        F->addFnAttr("sysio_wasm_action", FD->getSysioWasmAction().c_str());
      }
   if (isWasmNotify)
      if (const FunctionDecl *FD = cast_or_null<FunctionDecl>(D)) {
-        F->addFnAttr("eosio_wasm_notify", FD->getEosioWasmNotify().c_str());
+        F->addFnAttr("sysio_wasm_notify", FD->getSysioWasmNotify().c_str());
      }
 
   if (!DontDefer) {

@@ -727,17 +727,17 @@ public:
 
   /// Iterator that traverses the base classes of a class.
   using base_class_const_iterator = const CXXBaseSpecifier *;
-  bool isEosioContract() const { return hasAttr<EosioContractAttr>(); }
-  bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
-  bool isEosioTable() const { return hasAttr<EosioTableAttr>(); }
-  bool isEosioIgnore() const { return hasAttr<EosioIgnoreAttr>(); }
-  bool hasEosioRicardian() const { return hasAttr<EosioRicardianAttr>(); }
-  bool isEosioReadOnly() const { return hasAttr<EosioReadOnlyAttr>(); }
-  EosioActionAttr* getEosioActionAttr() const { return getAttr<EosioActionAttr>(); }
-  EosioTableAttr*  getEosioTableAttr() const { return getAttr<EosioTableAttr>(); }
-  EosioContractAttr*  getEosioContractAttr() const { return getAttr<EosioContractAttr>(); }
-  EosioRicardianAttr*  getEosioRicardianAttr() const { return getAttr<EosioRicardianAttr>(); }
-  EosioReadOnlyAttr* getEosioReadOnlyAttr() const { return getAttr<EosioReadOnlyAttr>(); }
+  bool isSysioContract() const { return hasAttr<SysioContractAttr>(); }
+  bool isSysioAction() const { return hasAttr<SysioActionAttr>(); }
+  bool isSysioTable() const { return hasAttr<SysioTableAttr>(); }
+  bool isSysioIgnore() const { return hasAttr<SysioIgnoreAttr>(); }
+  bool hasSysioRicardian() const { return hasAttr<SysioRicardianAttr>(); }
+  bool isSysioReadOnly() const { return hasAttr<SysioReadOnlyAttr>(); }
+  SysioActionAttr* getSysioActionAttr() const { return getAttr<SysioActionAttr>(); }
+  SysioTableAttr*  getSysioTableAttr() const { return getAttr<SysioTableAttr>(); }
+  SysioContractAttr*  getSysioContractAttr() const { return getAttr<SysioContractAttr>(); }
+  SysioRicardianAttr*  getSysioRicardianAttr() const { return getAttr<SysioRicardianAttr>(); }
+  SysioReadOnlyAttr* getSysioReadOnlyAttr() const { return getAttr<SysioReadOnlyAttr>(); }
 
   CXXRecordDecl *getCanonicalDecl() override {
     return cast<CXXRecordDecl>(RecordDecl::getCanonicalDecl());
@@ -2150,16 +2150,16 @@ public:
 
   bool isStatic() const;
   bool isInstance() const { return !isStatic(); }
-  bool isEosioAction() const { return hasAttr<EosioActionAttr>(); }
-  bool isEosioNotify() const { return hasAttr<EosioNotifyAttr>(); }
-  bool isEosioContract() const { return hasAttr<EosioContractAttr>(); }
-  bool hasEosioRicardian() const { return hasAttr<EosioRicardianAttr>(); }
-  bool isEosioReadOnly() const { return hasAttr<EosioReadOnlyAttr>(); }
-  EosioActionAttr* getEosioActionAttr() const { return getAttr<EosioActionAttr>(); }
-  EosioNotifyAttr* getEosioNotifyAttr() const { return getAttr<EosioNotifyAttr>(); }
-  EosioContractAttr* getEosioContractAttr() const { return getAttr<EosioContractAttr>(); }
-  EosioRicardianAttr* getEosioRicardianAttr() const { return getAttr<EosioRicardianAttr>(); }
-  EosioReadOnlyAttr* getEosioReadOnlyAttr() const { return getAttr<EosioReadOnlyAttr>(); }
+  bool isSysioAction() const { return hasAttr<SysioActionAttr>(); }
+  bool isSysioNotify() const { return hasAttr<SysioNotifyAttr>(); }
+  bool isSysioContract() const { return hasAttr<SysioContractAttr>(); }
+  bool hasSysioRicardian() const { return hasAttr<SysioRicardianAttr>(); }
+  bool isSysioReadOnly() const { return hasAttr<SysioReadOnlyAttr>(); }
+  SysioActionAttr* getSysioActionAttr() const { return getAttr<SysioActionAttr>(); }
+  SysioNotifyAttr* getSysioNotifyAttr() const { return getAttr<SysioNotifyAttr>(); }
+  SysioContractAttr* getSysioContractAttr() const { return getAttr<SysioContractAttr>(); }
+  SysioRicardianAttr* getSysioRicardianAttr() const { return getAttr<SysioRicardianAttr>(); }
+  SysioReadOnlyAttr* getSysioReadOnlyAttr() const { return getAttr<SysioReadOnlyAttr>(); }
 
   /// Returns true if the given operator is implicitly static in a record
   /// context.

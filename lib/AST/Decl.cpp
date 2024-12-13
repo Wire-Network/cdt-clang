@@ -4284,7 +4284,7 @@ bool RecordDecl::isInjectedClassName() const {
     cast<RecordDecl>(getDeclContext())->getDeclName() == getDeclName();
 }
 
-bool RecordDecl::isEosioIgnore() const { return hasAttr<EosioIgnoreAttr>(); }
+bool RecordDecl::isSysioIgnore() const { return hasAttr<SysioIgnoreAttr>(); }
 
 bool RecordDecl::isLambda() const {
   if (auto RD = dyn_cast<CXXRecordDecl>(this))
@@ -4577,14 +4577,14 @@ ImplicitParamDecl *ImplicitParamDecl::CreateDeserialized(ASTContext &C,
   return new (C, ID) ImplicitParamDecl(C, QualType(), ImplicitParamKind::Other);
 }
 
-bool FunctionDecl::isEosioWasmABI()const { return hasAttr<EosioWasmABIAttr>(); }
-std::string FunctionDecl::getWasmABI()const { return getAttr<EosioWasmABIAttr>()->getAbi(); }
-bool FunctionDecl::isEosioWasmEntry()const { return hasAttr<EosioWasmEntryAttr>(); }
-bool FunctionDecl::isEosioWasmImport()const { return hasAttr<EosioWasmImportAttr>(); }
-bool FunctionDecl::isEosioWasmAction()const { return hasAttr<EosioWasmActionAttr>(); }
-std::string FunctionDecl::getEosioWasmAction()const { return getAttr<EosioWasmActionAttr>()->getName(); }
-bool FunctionDecl::isEosioWasmNotify()const { return hasAttr<EosioWasmNotifyAttr>(); }
-std::string FunctionDecl::getEosioWasmNotify()const { return getAttr<EosioWasmNotifyAttr>()->getName(); }
+bool FunctionDecl::isSysioWasmABI()const { return hasAttr<SysioWasmABIAttr>(); }
+std::string FunctionDecl::getWasmABI()const { return getAttr<SysioWasmABIAttr>()->getAbi(); }
+bool FunctionDecl::isSysioWasmEntry()const { return hasAttr<SysioWasmEntryAttr>(); }
+bool FunctionDecl::isSysioWasmImport()const { return hasAttr<SysioWasmImportAttr>(); }
+bool FunctionDecl::isSysioWasmAction()const { return hasAttr<SysioWasmActionAttr>(); }
+std::string FunctionDecl::getSysioWasmAction()const { return getAttr<SysioWasmActionAttr>()->getName(); }
+bool FunctionDecl::isSysioWasmNotify()const { return hasAttr<SysioWasmNotifyAttr>(); }
+std::string FunctionDecl::getSysioWasmNotify()const { return getAttr<SysioWasmNotifyAttr>()->getName(); }
 
 FunctionDecl *FunctionDecl::Create(ASTContext &C, DeclContext *DC,
                                    SourceLocation StartLoc,

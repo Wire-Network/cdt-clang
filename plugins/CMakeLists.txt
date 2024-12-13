@@ -1,1 +1,1 @@
-#add_subdirectory(eosio_plugin)
+#add_subdirectory(sysio_plugin)
